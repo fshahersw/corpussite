@@ -1,0 +1,138 @@
+/** Existing generic-area response contracts over the categorized hosted catalog. */
+const pairs = {
+  'court-coverage':'docsupload_coverage', settlements:'settlements', statistics:'court_statistics', courts:'court_spine',
+  counsel:'mdl_counsel', urls:'url_directory', uscourts:'uscourts_pages', 'state-proceedings':'state_proceedings',
+  'court-documents':'court_documents', 'judge-disclosures':'judge_disclosures', 'federal-register':'federal_register_history',
+  'mdl-cases':'mdl_case_inventory', 'mdl-appearances':'mdl_appearances', 'mdl-documents':'mdl_docket_documents',
+  'mdl-activity':'mdl_docket_activity', 'mdl-crosswalk':'mdl_crosswalk', 'sd-statutes':'sd_statutes',
+  'agency-documents':'agency_science_documents', 'saved-pages':'saved_pages', 'indiana-code':'indiana_code',
+  'public-laws':'public_laws', 'state-codes':'state_codes', 'counsel-directory':'counsel_directory',
+  'verdict-reports':'verdict_reports', 'cpsc-injury-data':'cpsc_injury_data', 'expert-rulings':'expert_rulings',
+  'source-documents':'source_documents', 'citation-guide':'citation_reference', 'limitation-periods':'limitation_periods',
+  'citation-index':'citation_index', court_reference:'court_reference', judge_portraits:'judge_portraits',
+};
+export const aliases = Object.freeze({...pairs, ...Object.fromEntries(Object.values(pairs).map(v=>[v,v]))});
+const extraFilters = {
+  court_documents:['court'], url_directory:['court','host'], mdl_case_inventory:['judge'],
+  counsel_directory:['court'], public_laws:['year'],
+};
+const unavailable = reason => ({available:false,reason,total:0,page:1,limit:25,filters:[],columns:[],results:[]});
+const bad = (reason,status=404) => Response.json({error:reason},{status});
+const integer = (value,fallback,max) => Number.isFinite(Number(value)) && Number(value)>0 ? Math.min(max,Math.floor(Number(value))) : fallback;
+const text = value => String(Array.isArray(value)?value[0]??'':value??'').trim();
+
+function presentActivitySubtype(name,value) {
+  if(name!=='mdl_docket_activity')return value;
+  const label='Other (unclassified subtype)',result={...value};
+  if(value.cells?.entry_type==='Other')result.cells={...value.cells,entry_type:label};
+  if(value.badges)result.badges=value.badges.map(b=>b==='Other'?label:b);
+  if(value.facts)result.facts=value.facts.map(f=>Array.isArray(f)&&String(f[0]).startsWith('Entry type')&&f[1]==='Other'?[f[0],label]:f);
+  if(value.filters)result.filters=value.filters.map(f=>f.name==='entry_type'?{...f,options:(f.options||[]).map(o=>o.value==='other'?{...o,label}:o)}:f);
+  return result;
+}
+
+function listingConfig(dataset,params) {
+  const meta=dataset.metadata || dataset;
+  let mode;
+  if (meta.mode_parameter) {
+    mode=text(params[meta.mode_parameter]);
+    if (dataset.id==='docsupload_coverage' && text(params.collection)) mode='documents';
+    if (!meta.listing_modes?.[mode]) mode=Object.keys(meta.listing_modes || {})[0];
+  }
+  return {meta,mode,config:presentActivitySubtype(dataset.id,meta.listing_modes?.[mode] || meta.listing || {filters:[],columns:[]})};
+}
+
+export function queryOptions(dataset,params={}) {
+  const {meta,mode,config}=listingConfig(dataset,params);
+  const filters={_listing:'yes'};
+  const allowed=new Set([...(config.filters || []).map(f=>f.name),...(extraFilters[dataset.id] || [])]);
+  for (const key of allowed) {
+    const value=text(params[key]);
+    if (value && !['q','dfrom','dto','include_noise','mode','dataset'].includes(key)) filters[key]=value;
+  }
+  if (meta.mode_parameter && mode) filters[meta.mode_parameter]=mode;
+  if (dataset.id==='url_directory') filters.is_noise='0';
+  if (dataset.id==='federal_register_history') {
+    if (/^\d{1,2}$/.test(text(params.cfr_title)) && text(params.cfr_part)) {
+      filters.cfr_pair=`${text(params.cfr_title)}:${text(params.cfr_part)}`; delete filters.cfr_part;
+    } else delete filters.cfr_part;
+  }
+  if (dataset.id==='public_laws' && filters.usc_title && filters.action) {
+    filters.usc_effect=`${filters.usc_title}:${filters.action}`; delete filters.usc_title; delete filters.action;
+  }
+  if (dataset.id==='cpsc_injury_data' && mode==='neiss' && filters.product && !/^\d+$/.test(filters.product)) {
+    filters.__contains={product_text:filters.product.replace(/[%_]/g,'')}; delete filters.product;
+  }
+  if (dataset.id==='counsel_directory' && mode==='philadelphia_liaison') {
+    if (filters.role) {filters.__contains={role_text:filters.role.replace(/%/g,'')};delete filters.role;}
+    // Native Philadelphia liaison records do not participate in the federal
+    // appearance MDL/court join; the original adapter ignores these parameters.
+    delete filters.mdl;delete filters.court;
+  }
+  for (const [key,dest] of [['dfrom','__dfrom'],['dto','__dto']]) {
+    const value=text(params[key]);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {filters[dest]=value;filters.__date_type='date';}
+  }
+  const page=integer(params.page,1,1000000),limit=integer(params.limit,config.limit || 25,100);
+  return {meta,config,mode,page,limit,query:{datasets:[dataset.id],filters,q:text(params.q),limit,offset:(page-1)*limit,sort:'ordinal'}};
+}
+
+async function stateCodes(params,context,hub) {
+  const state=text(params.state).toUpperCase();
+  const destination={IN:'indiana_code',SD:'sd_statutes'}[state];
+  if (!destination) return null;
+  const source=await context.dataset(destination);
+  if (!source?.ready) return unavailable('This state code has not passed hosted publication checks.');
+  const inner={...params}; delete inner.state;
+  const options=queryOptions(source,inner), data=await context.query(options.query);
+  const stateFilter=(listingConfig(hub,{}).config.filters || []).find(f=>f.name==='state');
+  const filters=(options.config.filters || []).filter(f=>f.name==='q').concat(stateFilter?[stateFilter]:[],(options.config.filters || []).filter(f=>!['q','state'].includes(f.name)));
+  return {...options.config,available:true,total:data.total,page:options.page,limit:options.limit,filters,
+    results:(data.items || []).map(item=>({...item,id:`${state}:${item.id}`})),
+    code:{usps:state,name:state==='IN'?'Indiana Code':'South Dakota Codified Laws',state_name:state==='IN'?'Indiana':'South Dakota'}};
+}
+
+export async function handleGeneric(path,params={},context) {
+  if (path.startsWith('/supplement-files/')) {
+    if (!/^\/supplement-files\/[A-Za-z0-9_-]+\/[^/]+$/.test(path)) return bad('Invalid artifact route');
+    const alias=path.split('/')[2];
+    if (!aliases[alias]) return bad('Unknown source adapter');
+    return await context.asset(path);
+  }
+  const match=/^\/api\/area\/([^/]+)(\/item)?$/.exec(path);
+  if (!match) return null;
+  const name=aliases[match[1]];
+  if (!name) return bad('Unknown data area');
+  const dataset=await context.dataset(name);
+  if (!dataset?.ready) return match[2]?bad('Record is not published'):unavailable('This data layer has not passed hosted publication checks.');
+  if (match[2]) {
+    const id=text(params.id);
+    if (!id || id.length>500) return bad('Record not found');
+    let source=name,native=id;
+    if (name==='state_codes') {
+      const code=/^(IN|SD):(.+)$/.exec(id);
+      if (code) {source=code[1]==='IN'?'indiana_code':'sd_statutes';native=code[2];}
+    }
+    const loaded=await context.detail(native,[source],{full:false});
+    if (!loaded) return bad('Record not found');
+    const detail=presentActivitySubtype(source,loaded);
+    const extra=typeof context.context==='function' ? await context.context(`generic:extra:${source}:${native}`) : null;
+    if (!extra) return detail;
+    const factLabel=f=>Array.isArray(f)?f[0]:f.label;
+    const labels=new Set((detail.facts || []).map(factLabel));
+    const facts=[...(detail.facts || []),...(extra.facts || []).filter(f=>!labels.has(factLabel(f)))];
+    const sections=extra.sections?.length
+      ? [extra.sections[0],...(detail.sections || []),...extra.sections.slice(1)]
+      : [...(detail.sections || [])];
+    if (extra.citation_section) sections.push(extra.citation_section);
+    return {...detail,facts,sections};
+  }
+  if (name==='state_codes') {
+    const response=await stateCodes(params,context,dataset);
+    if (response) return response;
+  }
+  const options=queryOptions(dataset,params);
+  if (name==='judge_portraits') return {...options.config,available:true,results:[]};
+  const data=await context.query(options.query);
+  return {...options.config,available:true,total:data.total,page:options.page,limit:options.limit,results:(data.items || []).map(item=>presentActivitySubtype(name,item))};
+}

@@ -1,0 +1,4 @@
+us-atlas 3.0.1 counties-albers-10m.json (ISC licence, Mike Bostock; derived from U.S. Census Bureau cartographic boundary files, 2017 edition).
+Source: https://cdn.jsdelivr.net/npm/us-atlas@3.0.1/counties-albers-10m.json
+sha256: a674dfa31b625e92635f32684a61ae135b05a91507f17f2d5164833237fecf46
+Pre-projected with geoAlbersUsa to a 975 x 610 viewport.

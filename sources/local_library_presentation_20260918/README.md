@@ -1,0 +1,14 @@
+# Local library previews
+
+This is a bounded personal-library presentation layer. External source collections were read without modification. No new network acquisition and no bulk import were performed.
+
+- MDL 3080: 1,612 records in the saved native-document manifest. The first 24 actual PDFs are individually hash-verified and allowlisted. Their existing native page text is retained in 24 labeled derivatives, with per-page parent IDs and text hashes. The source collection relates to the District of New Jersey; originating courts can differ. Filenames supply displayed titles, not independently certified court metadata. No complete-docket claim.
+- Settlements: 848 SettleSignal reference records, nine prior bounded official-source reviews, four saved official PDFs. Attribution and review qualifications remain attached. Dates and statuses describe saved September 2026 snapshots, not live deadlines or personal eligibility.
+- Court registries: 56 state/DC/territory entries, 207 federal/special entries, six selected local court entries. These are directory records, not a count of distinct courts or county completeness.
+- Court assets: 295 unique image files in the prior verified inventory; 269 court/judiciary identity entries shown as previews. Five county-court associations use four unique copied images. Alameda and San Francisco share a 16px site icon. New York County uses a shared judiciary mark observed on that exact court page. No mark is propagated to other counties. All visuals have `is_hero: false`; none is a courthouse photograph.
+
+`delivery/archive-directory/local_library.py` exposes `collections()`, `collection(id, params=None)`, `county_visual(geoid)`, and `asset(id)`. Query parameters can be scalars or parse_qs lists: `q`, `page`, `page_size` (maximum 50), `family`, `kind`. Details contain readable titles/descriptions/excerpts and preserved evidence metadata. Unknown IDs return None.
+
+`asset(id)` returns `(Path, mime, attachment)` only for an exact ID in assets.json. It rechecks containment, original resolved path, current file size and SHA-256. Four images live here; 28 selected original PDFs remain in their explicit local source paths. The 24 text derivatives can be downloaded. No endpoint accepts arbitrary filesystem paths. Serve assets with `X-Content-Type-Options: nosniff`; the single source SVG was parsed and checked for executable elements, event attributes and external references. Do not insert SVG source markup into the page.
+
+The adapter caches manifest data for the process lifetime. Restart/reload the module after an intentional data rebuild. The build script is offline and bounded. assets.json carries source evidence, source paths and hashes for audit; those paths are not user-supplied routing parameters. Existing source permissions are preserved as unknown where not established.

@@ -1,0 +1,73 @@
+# Git holds the code. The data (databases, saved pages, PDFs, snapshots) travels as release assets; see TRANSFER.md.
+# Whole directories are ignored wherever possible so that `git status` never walks the 350,000 data files.
+# Order matters: the last matching line wins, so the machine-state block stays at the bottom.
+
+# --- never leaves this machine
+/.auth/
+/_transfer_scratch/
+
+# --- separate projects, tool caches, scratch
+/devvvv/
+/.tools/
+/.firecrawl/
+/test_artifacts/
+/external/
+
+# --- data trees: inside a collection folder only its scripts and README are tracked; deeper folders are never entered
+/catalog/
+/corpus/**
+!/corpus/*/
+!/corpus/*/*.py
+!/corpus/*/README.md
+/sources/**
+!/sources/*/
+!/sources/*/*.py
+!/sources/*/README.md
+
+# --- reports and delivery: scripts and write-ups only, except the archive-directory app, which is tracked whole
+/reports/**
+!/reports/**/
+!/reports/**/*.py
+!/reports/**/*.ps1
+!/reports/**/*.md
+/delivery/**
+!/delivery/**/
+!/delivery/**/*.py
+!/delivery/**/README.md
+!/delivery/archive-directory/**
+
+# --- loose files at the top level are data (they travel in the release) unless they are code or write-ups
+/*.*
+!/*.md
+!/*.py
+!/.gitignore
+!/.gitattributes
+!/requirements.txt
+!/data_manifest.json
+!/.claude/
+
+# --- machine state, caches and databases, everywhere
+node_modules/
+__pycache__/
+*.pyc
+*.sqlite3
+*.sqlite3-*
+*.log
+*.lock
+*.bak
+server.json
+.digest_cache.json
+
+# Deployment code is versioned; generated assets and credentials are local.
+!/package.json
+!/package-lock.json
+!/vercel.json
+!/middleware.js
+!/compose.yaml
+!/.dockerignore
+!/.vercelignore
+dist/
+.vercel/
+.env
+.env.*
+!/.env.example

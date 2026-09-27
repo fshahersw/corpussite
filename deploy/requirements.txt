@@ -1,0 +1,3 @@
+lxml==6.1.2
+courts-db==0.10.27
+pillow==10.4.0

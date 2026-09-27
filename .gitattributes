@@ -1,0 +1,3 @@
+# Byte-exact storage: no end-of-line conversion on any platform. Several small files are verified against a recorded
+# SHA-256 when the server starts, so a checkout must reproduce them exactly.
+* -text

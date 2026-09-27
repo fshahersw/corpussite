@@ -1,0 +1,12 @@
+{
+  "name": "corpussite",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "build": "node deploy/build.mjs",
+    "test": "node --test deploy/*.test.mjs"
+  },
+  "dependencies": { "@vercel/functions": "3.9.9" }
+}

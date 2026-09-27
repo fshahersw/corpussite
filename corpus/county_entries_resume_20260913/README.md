@@ -1,0 +1,5 @@
+# County entry resume pass
+
+This finite pass uses only the existing 334-URL staged Trellis Website-field delta. `preparation.json`, `decisions.jsonl` and `saved_controls_reviewed.jsonl` preserve exclusions and evidence. The standard crawler ran with eight workers, shared host pacing, a two-second host delay floor, no link following, depth zero, no automatic retries, and a 400-attempt / 600-second limit. Ordinary in-scope HTTP redirects remain recorded and may resolve to a saved page. Previously saved/enqueued URLs and known host or robots barriers were excluded without altering their controls.
+
+`pass_summary.json`, `entry_outcomes.jsonl`, `new_successes.jsonl` and `remaining_failures_and_gaps.jsonl` record the outcome. Successful raw and extracted text hashes are checked. County associations are retained from the staged Census reconciliation; website ownership/authority remains Trellis-reported and independently unverified. This is an entry-page pass, not complete county or court record coverage. Completed delivery files, indexes and source collections are unchanged.

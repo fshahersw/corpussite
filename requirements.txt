@@ -1,0 +1,22 @@
+# Python 3.11. Versions are the ones installed on the collecting machine (2026-09-20).
+
+# --- needed to run the server (delivery/archive-directory/server.py); everything else it uses is standard library
+lxml==6.1.2
+courts-db==0.10.27
+pillow==10.4.0
+
+# --- needed only to rebuild data layers (sources/*/build.py, scripts/, pipeline/)
+eyecite==2.7.8
+reporters-db==3.2.66
+pyahocorasick==2.3.1
+pypdf==6.0.0
+PyMuPDF==1.26.7
+PyYAML==6.0.2
+beautifulsoup4==4.13.3
+pyarrow==21.0.0
+pandas==2.2.3
+duckdb==1.5.5
+requests==2.32.3
+python-docx==1.2.0
+openpyxl==3.1.5
+regex==2024.11.6

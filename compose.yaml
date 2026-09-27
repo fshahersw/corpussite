@@ -1,0 +1,18 @@
+services:
+  archive:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile
+    working_dir: /archive
+    volumes:
+      - .:/archive:ro
+    environment:
+      CORPUS_BACKEND_TOKEN: ${CORPUS_BACKEND_TOKEN:?Set a 32+ character backend token}
+      CORPUS_ALLOWED_HOSTS: ${CORPUS_ALLOWED_HOSTS:?Set the exact backend host}
+    ports:
+      - "127.0.0.1:8769:8769"
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
