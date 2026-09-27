@@ -8,6 +8,7 @@ import { handleLawOutline } from './law-outline-api.mjs';
 import { handleFederal } from './federal-api.mjs';
 import { handleRelated } from './related-api.mjs';
 import { handleCountyResources } from './county-resources-api.mjs';
+import { handleEnrichment } from './enrichment-api.mjs';
 
 export async function handleCloud(request, context=createContext()) {
   const url=new URL(request.url);
@@ -20,7 +21,7 @@ export async function handleCloud(request, context=createContext()) {
     return {service:'legal-archive-supabase',ready:!!ready,release:release?.id||null,datasets:datasets.map(d=>({id:d.id,ready:d.ready,records:d.imported_records}))};
   }
   if (path==='/api/county-litigation-asset') return context.asset(path+url.search);
-  for (const handler of [handleCountyResources,handleDocuments,handlePlacesJudges,handleReferencesMdl,handleNavigation,handleLawOutline,handleFederal,handleRelated,handleGeneric]) {
+  for (const handler of [handleEnrichment,handleCountyResources,handleDocuments,handlePlacesJudges,handleReferencesMdl,handleNavigation,handleLawOutline,handleFederal,handleRelated,handleGeneric]) {
     const value=await handler(path,p,context);
     if(value!==null)return value;
   }

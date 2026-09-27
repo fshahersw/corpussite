@@ -1132,6 +1132,7 @@ async function render() {
   else if(route.view==='county')await renderCounty(signal);
   else if(route.view==='record'){renderLibrary(false);if(route.id)openRecord({id:route.id},null);else emptyState(main,'No record selected','Choose a document from the library to open it.',()=>navigate('documents'));}
   else renderLibrary(route.view==='counties');
+  if(!signal.aborted&&sequence===pageSequence&&typeof window.renderEnrichmentContext==='function')window.renderEnrichmentContext(main,route,signal);
 }
 document.querySelector('#close-record').addEventListener('click',()=>dialog.close());
 document.querySelector('.skip-link').addEventListener('click',event=>{event.preventDefault();main.focus();main.scrollIntoView({block:'start'});});

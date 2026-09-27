@@ -33,6 +33,7 @@ import mdl_registry
 import trellis_coverage
 import county_reader
 import county_litigation
+import enrichment
 import hosting
 from evidence_dates import document_dates
 
@@ -774,6 +775,14 @@ class Handler(BaseHTTPRequestHandler):
         u=urlsplit(self.path); p={k:v[0] for k,v in parse_qs(u.query).items()};path=u.path
         try:
             if path=='/api/health':return self.send_body(200,{'service':'legal-archive','ready':DB.is_file()})
+            if path=='/api/enrichment':return self.send_body(200,enrichment.listing(p))
+            if path=='/api/enrichment/graph':return self.send_body(200,enrichment.graph(p))
+            if path=='/api/enrichment/record':
+                item=enrichment.detail(p.get('id',''))
+                return self.send_body(200,item) if item else self.send_body(404,{'error':'Source addition not found or not published'})
+            if path=='/api/enrichment/file':
+                asset=enrichment.asset(p.get('id',''),p.get('kind','original'))
+                return self.send_body(200,asset[0],asset[1],attachment=asset[2] if p.get('kind','original')=='original' else None,sandbox=True) if asset else self.send_body(404,{'error':'Verified source artifact not found'})
             if path.startswith('/api/trellis-coverage'):
                 if path == '/api/trellis-coverage/summary': return self.send_body(200,trellis_coverage.summary())
                 if path == '/api/trellis-coverage/progress': return self.send_body(200,trellis_coverage.progress(p.get('state')))
@@ -792,7 +801,7 @@ class Handler(BaseHTTPRequestHandler):
                     return self.send_body(200,trellis_coverage.listing(state=p.get('state'),detail=boolean('detail'),has_documents=boolean('has_documents'),
                         practice_area=p.get('practice_area'),venue=boolean('venue'),fips_resolved=boolean('fips_resolved'),q=p.get('q',''),limit=p.get('limit',50),offset=p.get('offset',0)))
                 return self.send_body(404,{'error':'Unknown Trellis coverage view'})
-            if path in {'/','/index.html','/app.js','/areas.js','/usmap.js','/statsviz.js','/judgeui.js','/regsui.js','/lawreader.js','/styles.css'}:
+            if path in {'/','/index.html','/app.js','/areas.js','/usmap.js','/statsviz.js','/judgeui.js','/regsui.js','/lawreader.js','/enrichment.js','/styles.css'}:
                 file=HERE/('index.html' if path=='/' else path[1:])
                 if not file.is_file():return self.send_body(200,b'/* module not installed yet */','application/javascript; charset=utf-8')
                 return self.send_body(200,file.read_bytes(),mimetypes.guess_type(file)[0]+'; charset=utf-8')

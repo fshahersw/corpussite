@@ -23,6 +23,10 @@ Originals and full text stay outside Git. Source files are retained locally, and
 
 Release publication requires reconciled hashes/counts, original download checks, working filters/readers/portraits and access-control checks. Until then the cloud health endpoint reports `ready: false` and unvalidated datasets remain unavailable. This archive does not claim complete nationwide coverage or uniform legal currency.
 
+The dated source-additions layer provides separate readers and evidence connections at `#additions` and `#connections`, with contextual links from state, county and MDL pages. It preserves original documents, extracted sections, exact identifiers and date distinctions. Reader totals include extracted sections and are reported separately from distinct source-file totals. Rescission notices and unresolved legal currency remain explicit.
+
+`scripts/build_gap_enrichment_20260927.py` prepares the local layer with its publication gate closed. Independent source/hash validation is required before local publication. `deploy/exporters/enrichment.py` produces a separate, pinned Supabase delta without changing the base migration plan. Its small listing index and bounded entity graph contexts must be imported and accepted along with originals before cloud publication; deploying code alone does not publish the data.
+
 ## Code layout
 
 | Directory | Purpose |

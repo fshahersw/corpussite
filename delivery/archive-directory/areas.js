@@ -617,7 +617,8 @@
     for (const [family, f] of Object.entries(s.families || {})) { const tr = el('tr'); const c = el('td'); c.append(routeLink(human(family), 'laws', { state: s.name, category: ({ statutes: 'statutes', constitution: 'constitutions', regulations: 'regulations', court_rules: 'rules', forms: 'forms' })[family] || '' }, 'button-link')); tr.append(c, el('td', 'small-number', count(f?.official_capture?.total || 0)), el('td', 'small-number', count(f?.imported_collection || 0)), el('td', 'small-number', count(f?.third_party_snapshot || 0))); tb.append(tr); }
     t.append(tb); left.append(append(el('div', 'table-scroll'), t));
     left.append(footnote('Counts are saved records by source tier, not unique or current provisions. Third-party snapshot rows come from the Open US Law publisher snapshot.'));
-    right.append(el('h2', '', 'Open gaps'));
+    right.append(el('h2', '', 'Gaps in the coverage snapshot'));
+    right.append(el('p','muted-note','New source additions are listed separately below; they do not establish complete or current coverage.'));
     if ((s.gaps || []).length) { const list = el('ul', 'gap-list'); for (const g of s.gaps) list.append(el('li', '', GAP_LABELS[g] || human(g))); right.append(list); } else right.append(el('p', 'quiet-empty', 'No gap flags recorded for this state.'));
     if (s.topic_counts && Object.keys(s.topic_counts).length) { right.append(el('h3', '', 'Mass-tort topic candidates')); const chips = el('div', 'chip-row'); for (const [topic, n] of Object.entries(s.topic_counts)) chips.append(routeLink(`${human(topic)} ${count(n)}`, 'coverage', { state: abbr, topic }, 'chip')); right.append(chips); right.append(footnote(s.topic_label || 'Search-derived candidates, not a survey or legal advice.')); }
     append(layout, left, right); main.append(layout);
