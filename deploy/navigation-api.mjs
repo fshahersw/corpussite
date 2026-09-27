@@ -2,6 +2,7 @@
 const num=(value,fallback,max=100)=>Math.min(max,Math.max(1,parseInt(value,10)||fallback));
 const lower=value=>String(value??'').trim().toLowerCase();
 const notFound=()=>Response.json({error:'Saved reference not found'},{status:404});
+const publicationPending=()=>Response.json({error:'These saved resources have not been published yet. Use Refresh to check their availability.',code:'publication_pending',available:false},{status:503});
 const pageRows=(rows,p,max=100)=>{const page=num(p.page,1,1e7),limit=num(p.limit,30,max);return {total:rows.length,items:rows.slice((page-1)*limit,page*limit),page,limit};};
 function sectionFacet(rows){
  const groups=new Map();
@@ -10,8 +11,9 @@ function sectionFacet(rows){
 }
 export async function handleNavigation(path,p,ctx){
  const context=key=>ctx.context(key);
- if(path==='/api/coverage/matrix')return context('coverage:matrix');
- if(path==='/api/coverage/venues')return context('coverage:venues');
+ const publishedContext=async key=>(await context(key))??publicationPending();
+ if(path==='/api/coverage/matrix')return publishedContext('coverage:matrix');
+ if(path==='/api/coverage/venues')return publishedContext('coverage:venues');
  if(path.startsWith('/api/coverage/')){
   const aliases=await context('state:aliases')||{},state=p.state?aliases[lower(p.state)]:null;
   if(path==='/api/coverage/state')return state?await context('coverage:state:'+state)||notFound():notFound();
@@ -42,8 +44,8 @@ export async function handleNavigation(path,p,ctx){
  if(path==='/api/county-registry')return await context('county-registry:'+p.geoid)||{available:false,geoid:p.geoid};
  if(path.startsWith('/api/trellis-coverage')){
   if(path.endsWith('/receipt'))return ctx.asset(path+'?'+new URLSearchParams({id:p.id}));
-  if(path.endsWith('/summary'))return context('trellis:summary');
-  if(path.endsWith('/progress')){const progress=await context('trellis:progress');if(!p.state)return progress;const row=progress?.states?.find(r=>[lower(r.state),lower(r.state_name)].includes(lower(p.state).replaceAll('-',' ')));return row?{...row,available:true,as_of:progress.as_of,qualification:progress.qualification}:{available:false};}
+  if(path.endsWith('/summary'))return publishedContext('trellis:summary');
+  if(path.endsWith('/progress')){const progress=await context('trellis:progress');if(!p.state)return progress??publicationPending();const row=progress?.states?.find(r=>[lower(r.state),lower(r.state_name)].includes(lower(p.state).replaceAll('-',' ')));return row?{...row,available:true,as_of:progress.as_of,qualification:progress.qualification}:{available:false};}
   const rows=await context('trellis:counties')||[];
   if(path.endsWith('/county')){const matched=rows.filter(r=>p.fips?r.fips===p.fips:r.state===String(p.state).toUpperCase()&&lower(r.county)===lower(p.name));return matched.length===1?{...matched[0],available:true}:{available:false};}
   if(path.endsWith('/state')){const state=(await context('trellis:states')||[]).find(r=>r.state===String(p.state).toUpperCase());return state?{...state,counties:rows.filter(r=>r.state===state.state).sort((a,b)=>a.county.localeCompare(b.county))}:{available:false};}
@@ -53,8 +55,8 @@ export async function handleNavigation(path,p,ctx){
  }
  if(path.startsWith('/api/resource')){
   if(!await context('doj:states'))return {ready:false,found:false,items:[],total:0};
-  if(path==='/api/resources/states')return context('doj:states');
-  if(path==='/api/resources/circuits')return context('doj:circuits');
+  if(path==='/api/resources/states')return publishedContext('doj:states');
+  if(path==='/api/resources/circuits')return publishedContext('doj:circuits');
   if(path==='/api/resources/edges'){const rows=(await context('doj:edges')||[]).filter(r=>!p.relation||r.relation===p.relation);return {ready:true,...pageRows(rows,p)};}
   const all=await context('doj:resources')||[],qualification=await context('doj:qualification');
   if(path==='/api/resource'){const r=all.find(r=>r.record_id===p.id);return r?{ready:true,...r}:notFound();}
@@ -69,7 +71,7 @@ export async function handleNavigation(path,p,ctx){
   rows.sort((a,b)=>a.position-b.position);
   const states=await context('doj:states');return {ready:true,found:true,state:state==='FEDERAL'?states.federal_page:states.items.find(r=>r.usps===state),...pageRows(rows,p),facets,qualification};
  }
- if(path==='/api/collections')return context('collections');
+ if(path==='/api/collections')return publishedContext('collections');
  if(path==='/api/collection'){
   const data=await context('collection:'+p.id);if(!data)return notFound();
   const rows=data.rows.filter(r=>(!p.q||lower(['title','description','excerpt','court_label','state','resource_kind'].map(k=>r[k]||'').join(' ')).includes(lower(p.q)))&&(!p.family||lower(r.registry_family)===lower(p.family))&&(!p.kind||lower(r.resource_kind)===lower(p.kind)));

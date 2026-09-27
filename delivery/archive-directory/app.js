@@ -150,7 +150,10 @@ function readRoute() {
 async function api(path, signal) {
   if (!['http:', 'https:'].includes(location.protocol)) throw new Error('Open this directory through the local archive server, rather than opening index.html directly.');
   const response = await fetch(path, {signal, headers: {'Accept':'application/json'}, cache: 'no-store'});
-  if (!response.ok) throw new Error(`The archive server returned HTTP ${response.status}. Please try again or refresh this page.`);
+  if (!response.ok) {
+    const failure = await response.json().catch(() => null);
+    throw new Error(typeof failure?.error === 'string' ? failure.error : `The archive server returned HTTP ${response.status}. Please try again or refresh this page.`);
+  }
   const data = await response.json();
   if (data.error) throw new Error(typeof data.error === 'string' ? data.error : 'The archive server could not complete this request.');
   return data;
