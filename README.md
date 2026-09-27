@@ -1,6 +1,6 @@
 # CorpusSite
 
-A private legal research library with state laws and rules, county resources, court information, judge profiles, federal regulations, agency records and linked originals.
+A public legal research library with state laws and rules, county resources, court information, judge profiles, federal regulations, agency records and linked originals.
 
 **Cloud migration is in progress. This repository is not yet a completed hosted release.** The local archive remains usable. Supabase imports are stopped until the approved 64 GB database disk is available; its disk-change cooldown was still active on September 27, 2026. No compute upgrade is authorized. Scheduled scraping remains paused.
 
@@ -11,7 +11,7 @@ A private legal research library with state laws and rules, county resources, co
 - Frontend build: `npm ci`, `npm test`, `npm run build` (Node 22 or newer).
 - A new checkout contains code, not the large corpus. The legacy local restore process is documented in [TRANSFER.md](TRANSFER.md); the hosted runtime reads categorized Supabase data after validation and publication.
 
-Set `CORPUS_SUPABASE_URL`, `CORPUS_SUPABASE_SECRET_KEY` and `CORPUS_SITE_PASSWORD` only in server-side configuration. See [.env.example](.env.example). Hosted login uses username `reader`. Never put the server secret in browser code.
+Set `CORPUS_SUPABASE_URL` and `CORPUS_SUPABASE_SECRET_KEY` only in server-side configuration. See [.env.example](.env.example). Browsing, read-only API requests and available downloads require no login. `CORPUS_SITE_PASSWORD` is no longer used. Never put the Supabase server secret in browser code.
 
 ## Data and release boundaries
 

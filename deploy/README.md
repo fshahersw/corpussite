@@ -19,7 +19,7 @@ Local evidence and resumable files are under reports/supabase_migration_20260927
 | Component | Responsibility |
 |---|---|
 | delivery/archive-directory/ → dist/ | Browser UI and static visual assets |
-| middleware.js, api/archive.js | Private-site authentication and routing of existing archive URLs |
+| middleware.js, api/archive.js | Public read-only access and routing of existing archive URLs |
 | deploy/cloud-api.mjs and domain adapters | Pages, filters, readers, navigation and download contracts |
 | deploy/cloud-context.mjs | Server-only Supabase access, readiness gates, context assembly and signed assets |
 | supabase/migrations/ | Postgres schema, search/filter RPCs, outline/group tables and access controls |
@@ -50,9 +50,8 @@ Use the repository-root .env.example as a variable reference. Set these as **ser
 |---|---|
 | CORPUS_SUPABASE_URL | Pinned project origin above |
 | CORPUS_SUPABASE_SECRET_KEY | Server secret with migration/runtime access; never a browser variable |
-| CORPUS_SITE_PASSWORD | Separate private-library password of at least 16 characters |
 
-Hosted login uses username **reader** and the site password. Authentication is checked by middleware and by the archive API. Anonymous database/RPC and Storage access is not the runtime access model.
+The user requested public access: the site and its read-only API require no login. `CORPUS_SITE_PASSWORD` is unused and may be removed from Vercel settings. Supabase credentials remain server-side, table/RPC permissions remain restricted to the server, and the Storage bucket remains private. Public visitors can request the published records and signed downloads exposed by the application; this does not grant direct database access.
 
 Never commit credentials, private .env files, .auth, transfer data or private receipts. Never prefix secrets with NEXT_PUBLIC_ or VITE_. Python import tools read CORPUS_SUPABASE_SECRET_KEY from their process environment or use the existing Windows user-bound DPAPI credential. They do not automatically load .env.example or .env. Configure Vercel through its environment settings; the Windows credential cannot be copied there.
 
@@ -92,12 +91,12 @@ Journals do not replace remote count/hash checks. Do not delete remote rows or c
 - Context pieces and parent manifests are complete, hash-verified and deliberately published in dependency order. Required dataset and outline readiness gates agree.
 - Original, portrait and full-text routes resolve to verified private objects. Check signed downloads, a large text file and its preferred-group alias.
 - Compare hosted lists and filters to localhost: states/counties, county resource types, laws/rules categories, judge portraits/details, source grouping, date/review filters, related records, and outline next/previous links.
-- Confirm readable text, source/as-of dates, explicit unavailable states, authentication, direct API protection and no secret/private-path leakage.
+- Confirm readable text, source/as-of dates, explicit unavailable states, unauthenticated browsing, read-only API methods and no secret/private-path leakage.
 - Only then may the reviewed publication step activate datasets and their contexts. --activate does not replace artifact/context checks.
 
 ## Vercel release setup — held until acceptance
 
-Import **fshahersw/corpussite** with repository root, framework **Other**, install **npm ci**, build **npm run build**, output **dist**, and Node 22 or newer as required by package.json. Configure the three server variables above. The build copies UI assets; SQLite and corpus data are not bundled into Functions.
+Import **fshahersw/corpussite** with repository root, framework **Other**, install **npm ci**, build **npm run build**, output **dist**, and Node 22 or newer as required by package.json. Configure the two server variables above. The build copies UI assets; SQLite and corpus data are not bundled into Functions.
 
 The repository pins `installCommand: "npm ci"` in `vercel.json`. This overrides installation autodetection and dashboard settings. The root Python requirements are for local corpus tools; installing them on Vercel can attempt native Python builds and fail with `cmake` missing. `.vercelignore` excludes those local Python inputs from deployments. Do not install Python build tools to work around this error. Deploy the corrected commit rather than redeploying an older failed commit.
 
@@ -113,6 +112,6 @@ python -m unittest discover -s deploy/exporters -p test_large_text_assets.py
 node delivery/archive-directory/test_ui_release.cjs
 ~~~
 
-After migration gates pass, test the actual Vercel deployment: login, Montana, a county rules/forms reader, a judge portrait, law navigation, a private original and a large full-text download. Local tests cannot establish live Vercel/Supabase acceptance. Until then, report migration and release as incomplete.
+After migration gates pass, test the actual Vercel deployment without an Authorization header: Montana, a county rules/forms reader, a judge portrait, law navigation, a signed original download and a large full-text download. Local tests cannot establish live Vercel/Supabase acceptance. Until then, report migration and release as incomplete.
 
 Platform guidance: [bulk imports](https://supabase.com/docs/guides/database/import-data), [timeouts](https://supabase.com/docs/guides/database/postgres/timeouts), and [database versus disk size](https://supabase.com/docs/guides/platform/database-size).

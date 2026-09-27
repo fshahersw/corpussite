@@ -4,9 +4,6 @@ import middleware from '../middleware.js';
 import archive from '../api/archive.js';
 import { handleCloud } from './cloud-api.mjs';
 
-const password = 'fixture-private-password-long-enough';
-const authorization = 'Basic ' + Buffer.from('reader:' + password).toString('base64');
-
 async function environment(values, operation) {
   const previous = Object.fromEntries(Object.keys(values).map(key => [key, process.env[key]]));
   for (const [key, value] of Object.entries(values)) {
@@ -26,47 +23,64 @@ function response() {
     end(body) { this.body = body == null ? '' : Buffer.from(body).toString('utf8'); } };
 }
 
-test('direct API requests cannot bypass browser auth with a forged rewrite header', async () => {
-  await environment({ CORPUS_SITE_PASSWORD: password, CORPUS_SUPABASE_SECRET_KEY: undefined }, async () => {
-    const out = response();
-    await archive({ method: 'GET', url: '/api/archive', headers: { 'x-corpus-route': '/api/health' } }, out);
-    assert.equal(out.statusCode, 401);
-    assert.match(out.headers['www-authenticate'], /^Basic /);
-    assert.equal(out.headers['cache-control'], 'private, no-store');
-    assert.equal(out.body.includes(password), false);
-  });
+test('public API works without browser credentials and ignores the obsolete site password', async () => {
+  for(const oldPassword of [undefined,'obsolete-password-value']) {
+    await environment({ CORPUS_SITE_PASSWORD: oldPassword, CORPUS_SUPABASE_SECRET_KEY: 'synthetic-server-secret' }, async () => {
+      const originalFetch=globalThis.fetch;
+      globalThis.fetch=async(url,options)=>{
+        assert.equal(options.headers.apikey,'synthetic-server-secret');
+        assert.equal(options.headers.authorization,undefined);
+        return Response.json([]);
+      };
+      try {
+        const out = response();
+        await archive({ method: 'GET', url: '/api/archive', headers: { 'x-corpus-route': '/api/health' } }, out);
+        assert.equal(out.statusCode,200);
+        assert.equal(out.headers['www-authenticate'],undefined);
+        assert.equal(JSON.parse(out.body).ready,false);
+        assert.equal(out.body.includes('synthetic-server-secret'),false);
+      } finally { globalThis.fetch=originalFetch; }
+    });
+  }
 });
 
-test('middleware protects static pages and replaces incoming route hints on API rewrites', async () => {
-  await environment({ CORPUS_SITE_PASSWORD: password }, async () => {
-    const denied = await middleware(new Request('https://site.invalid/index.html'));
-    assert.equal(denied.status, 401);
+test('middleware allows anonymous static pages and replaces incoming route hints on API rewrites', async () => {
+  await environment({ CORPUS_SITE_PASSWORD: undefined }, async () => {
+    const page = await middleware(new Request('https://site.invalid/index.html'));
+    assert.equal(page.headers.get('x-middleware-next'),'1');
+    assert.equal(page.headers.get('www-authenticate'),null);
     const routed = await middleware(new Request('https://site.invalid/api/counties?state=MT', {
-      headers: { authorization, 'x-corpus-route': '/files/forged' }
+      headers: { 'x-corpus-route': '/files/forged' }
     }));
     assert.equal(routed.headers.get('x-middleware-rewrite'), 'https://site.invalid/api/archive');
     assert.equal(routed.headers.get('x-middleware-request-x-corpus-route'), '/api/counties?state=MT');
   });
 });
 
-test('missing private-site configuration fails closed before a data connection', async () => {
-  await environment({ CORPUS_SITE_PASSWORD: undefined, CORPUS_SUPABASE_SECRET_KEY: undefined }, async () => {
-    const out = response();
-    await archive({ method: 'GET', url: '/api/health', headers: {} }, out);
-    assert.equal(out.statusCode, 503);
-    assert.match(out.body, /CORPUS_SITE_PASSWORD/);
+test('public API still rejects write methods before any database request', async () => {
+  await environment({ CORPUS_SUPABASE_SECRET_KEY: 'synthetic-server-secret' }, async () => {
+    const originalFetch=globalThis.fetch;
+    globalThis.fetch=async()=>{assert.fail('A write method must never call Supabase');};
+    try {
+      for (const method of ['POST','PUT','PATCH','DELETE']) {
+        const out=response();
+        await archive({method,url:'/api/health',headers:{}},out);
+        assert.equal(out.statusCode,405);
+        assert.equal(out.headers['www-authenticate'],undefined);
+      }
+    } finally { globalThis.fetch=originalFetch; }
   });
 });
 
 test('API connection failures never echo credentials or internal exception details', async () => {
-  await environment({ CORPUS_SITE_PASSWORD: password, CORPUS_SUPABASE_SECRET_KEY: 'synthetic-server-secret' }, async () => {
+  await environment({ CORPUS_SUPABASE_SECRET_KEY: 'synthetic-server-secret' }, async () => {
     const originalFetch = globalThis.fetch, originalError = console.error;
     globalThis.fetch = async () => { throw new Error('synthetic-server-secret plus private connection details'); };
     const messages = [];
     console.error = (...args) => messages.push(args.join(' '));
     try {
       const out = response();
-      await archive({ method: 'GET', url: '/api/health', headers: { authorization } }, out);
+      await archive({ method: 'GET', url: '/api/health', headers: {} }, out);
       assert.equal(out.statusCode, 503);
       assert.equal(out.headers['cache-control'], 'private, no-store');
       assert.equal(out.body.includes('synthetic-server-secret'), false);

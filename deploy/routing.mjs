@@ -9,23 +9,6 @@ function unavailable(message) {
   return Response.json({ error: message }, { status: 503, headers: { 'cache-control': 'no-store' } });
 }
 
-export async function checkAccess(request, env) {
-  // This corpus includes source-restricted material. Public code does not make its data public.
-  const password = env.CORPUS_SITE_PASSWORD;
-  if (!password || password.length < 16) return unavailable('Set CORPUS_SITE_PASSWORD (16+ characters) to enable this private research site.');
-  const credentials = new TextEncoder().encode(`reader:${password}`);
-  const expected = `Basic ${btoa(String.fromCharCode(...credentials))}`;
-  const supplied = request.headers.get('authorization') || '';
-  const digest = async value => new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value)));
-  const [a, b] = await Promise.all([digest(expected), digest(supplied)]);
-  let difference = 0;
-  for (let i = 0; i < a.length; i++) difference |= a[i] ^ b[i];
-  if (difference) return new Response('Sign in to the research library.', {
-    status: 401, headers: { 'www-authenticate': 'Basic realm="Legal Archive", charset="UTF-8"', 'cache-control': 'no-store' }
-  });
-  return null;
-}
-
 export function backendRequest(request, env) {
   if (request.method !== 'GET' && request.method !== 'HEAD') return new Response('Read-only archive', { status: 405 });
   let origin;

@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { checkAccess, backendRequest, isArchivePath } from './routing.mjs';
+import { backendRequest, isArchivePath } from './routing.mjs';
 
-const env = { CORPUS_BACKEND_ORIGIN: 'https://archive.example', CORPUS_BACKEND_TOKEN: 'test-token-'.repeat(4), CORPUS_SITE_PASSWORD: 'test-password-long-enough' };
+const env = { CORPUS_BACKEND_ORIGIN: 'https://archive.example', CORPUS_BACKEND_TOKEN: 'test-token-'.repeat(4) };
 test('API, document and portrait paths route to the archive', () => {
   for (const p of ['/api/counties', '/files/123', '/judge-images/id', '/supplement-files/docs/id']) assert.equal(isArchivePath(p), true);
   assert.equal(isArchivePath('/app.js'), false);
@@ -22,16 +22,4 @@ test('missing or unsafe origins fail closed without reflecting secrets', async (
     assert.equal(response.status, 503);
     assert.equal((await response.text()).includes(env.CORPUS_BACKEND_TOKEN), false);
   }
-});
-test('hosted archive is private and requires configured browser authentication', async () => {
-  assert.equal((await checkAccess(new Request('https://site.example/'), {})).status, 503);
-  assert.equal((await checkAccess(new Request('https://site.example/'), env)).status, 401);
-  const req = new Request('https://site.example/', { headers: { authorization: `Basic ${btoa(`reader:${env.CORPUS_SITE_PASSWORD}`)}` } });
-  assert.equal(await checkAccess(req, env), null);
-});
-test('browser passwords use UTF-8 consistently', async () => {
-  const local = { ...env, CORPUS_SITE_PASSWORD: 'private-long-pass-\u2603\u4f60' };
-  const encoded = Buffer.from(`reader:${local.CORPUS_SITE_PASSWORD}`, 'utf8').toString('base64');
-  const req = new Request('https://site.example/', { headers: { authorization: `Basic ${encoded}` } });
-  assert.equal(await checkAccess(req, local), null);
 });
