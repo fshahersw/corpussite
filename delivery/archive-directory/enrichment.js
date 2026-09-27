@@ -3,6 +3,7 @@
   const registry = window.ARCHIVE_AREAS = window.ARCHIVE_AREAS || {};
   const relationLabels = {in_state:'County in state',listed_filing_source:'Listed filing source',captured_as:'Saved reader',links_to:'Links to',contains:'Contains',excerpt_of:'Section from',has_native_identifier:'Native identifier',source_names_county:'Names county',order_in_mdl:'Order in MDL',cites_mdl:'Cites MDL',lists_docket_in_schedule:'Docket printed in schedule'};
   const shapeLabel = value => ({section:'Extracted section',body:'Document body',index:'Source index'})[value] || human(value||'unclassified');
+  const statusLabel = value => ({rescission_notices_only:'Rescission notices only',rule_text_with_rescission_notices:'Includes rescission notices',compilation_includes_active_text_and_rescinded_notices:'Compilation includes rescission notices',rule_text_currency_unverified:'Rule text — currency not verified'})[value] || '';
   function tabs() {
     const row=el('div','button-row');append(row,routeLink('Saved additions','additions',{},'button'),routeLink('Evidence connections','connections',{},'button'));return row;
   }
@@ -11,6 +12,7 @@
     append(card,routeLink(item.title,`addition/${encodeURIComponent(item.id)}`,{},'document-title'),
       el('p','record-subline',[item.state||'Federal / shared',human(item.resource_type||item.category),shapeLabel(item.document_shape),item.source_page?'Source page '+item.source_page:''].filter(Boolean).join(' · ')),
       el('p','muted-note',`Captured ${item.captured_at?date(item.captured_at):'date unknown'} · ${human(item.review_status||'source evidence recorded')}`));
+    if(statusLabel(item.legal_status))card.append(el('p','publication-note',statusLabel(item.legal_status)));
     const buttons=el('div','button-row');append(buttons,routeLink('Read saved text',`addition/${encodeURIComponent(item.id)}`,{},'button-link'),link(item.document_shape==='section'?'Source document ↗':'Original file ↗',item.original_url),link('Publisher ↗',item.source_url,true,'button-link'));card.append(buttons);return card;
   }
   registry.additions={title:'Source additions',nav:'Source additions',async render(signal,route){
@@ -39,6 +41,7 @@
     const row=el('div','button-row');append(row,routeLink('← Source additions','additions',{},'button-link'),link(item.document_shape==='section'?'Download source document':'Download original',item.original_url),link('Publisher ↗',item.source_url,true),routeLink('Related sources & identifiers','connections',{entity:item.id},'button'));main.append(row);
     if(item.parent_compilation_id?.startsWith('addition:'))row.append(routeLink('Full source reader',`addition/${encodeURIComponent(item.parent_compilation_id)}`,{},'button-link'));
     if(item.document_shape==='section')main.append(el('p','muted-note',`This reader is an extracted section of a larger source document${item.source_page?', starting on source page '+item.source_page:''}. Open the source document to review it in context.`));
+    if(statusLabel(item.legal_status))main.append(el('p','publication-note',statusLabel(item.legal_status)));
     const dates=el('dl','record-meta');for(const [label,value] of [['Captured',item.captured_at],['Source as of',item.source_as_of],['Filed',item.filed_at],['Publisher date',item.published_at],['Effective date',item.effective_from]])metaRow(dates,label,value?date(value,label==='Captured'):'Not established');metaRow(dates,'Review',human(item.review_status)||'Not established');main.append(dates);
     if(item.text)main.append(prose(item.text,'reading-content'));else emptyState(main,'Text is not available','The original file is preserved above.');
     if(item.hierarchy?.length){const details=el('details','library-details'),list=el('ol','career-timeline');for(const part of item.hierarchy)list.append(el('li','',typeof part==='string'?part:[part.label||part.title||part.name||part.id,part.page?'page '+part.page:''].filter(Boolean).join(' · ')));append(details,el('summary','','Source outline'),list);main.append(details);}

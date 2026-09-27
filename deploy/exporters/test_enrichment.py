@@ -22,7 +22,7 @@ class ProjectionTests(unittest.TestCase):
     def fixture(self):
         records = [
             {'id':'shared','title':'Shared rules','state':'MI','category':'rules','document_shape':'body','original_url':'/api/enrichment/file?id=shared',
-             'source_url':'https://court.gov/rules','source_path':'C:/private/raw.pdf','text':'Not for the small index'},
+             'source_url':'https://court.gov/rules','source_path':'C:/private/raw.pdf','text':'Not for the small index','legal_status':'rescission_notices_only'},
             {'id':'other','title':'Other county','state':'MI','resource_type':'forms'},
             {'id':'mdl-order','title':'Transfer order','mdl_number':'1234','resource_type':'transfer_order'},
         ]
@@ -44,6 +44,7 @@ class ProjectionTests(unittest.TestCase):
         self.assertEqual(set(index['graph_entities']),set(graphs),'Known graph identities must remain distinguishable from missing publication contexts')
         self.assertEqual([r['id'] for r in index['resources']],['shared','other','mdl-order'])
         self.assertEqual(index['resources'][0]['original_url'],'/api/enrichment/file?id=shared')
+        self.assertEqual(index['resources'][0]['legal_status'],'rescission_notices_only')
         encoded = json.dumps(index)
         self.assertNotIn('Not for the small index',encoded)
         self.assertNotIn('C:/private',encoded); self.assertNotIn('source_path',encoded)

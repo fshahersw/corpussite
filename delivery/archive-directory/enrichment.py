@@ -70,7 +70,7 @@ def integer(value, fallback, maximum):
 def public_record(r):
     allowed = ('id', 'title', 'state', 'county_fips', 'county_geoids', 'mdl_number', 'resource_type', 'category', 'document_shape',
                'native_id', 'source_url', 'final_url', 'mime_type', 'captured_at', 'source_as_of', 'published_at', 'effective_from', 'filed_at',
-               'jurisdiction', 'jurisdiction_scope', 'applicability', 'legal_currency_verified', 'qualification', 'caption_as_printed', 'caption_basis', 'quality_notes', 'source_evidence',
+               'jurisdiction', 'jurisdiction_scope', 'applicability', 'legal_currency_verified', 'legal_status', 'contains_rescinded_rule_notices', 'qualification', 'caption_as_printed', 'caption_basis', 'quality_notes', 'source_evidence',
                'source_page', 'page_range', 'parent_compilation_id',
                'date_evidence', 'review_status', 'original_url', 'text_url', 'raw_sha256', 'text_sha256', 'raw_bytes', 'text_characters', 'lane', 'hierarchy')
     return public_value({k: r[k] for k in allowed if k in r})

@@ -145,7 +145,7 @@ class EnrichmentSidecarChecks(unittest.TestCase):
         self.record = {'id': 'addition:one', 'title': 'Court rule', 'state': 'MI',
                        'resource_type': 'rules', 'original_file': 'original.txt', 'raw_sha256': sha,
                        'filed_at': '2026-08-07', 'jurisdiction': 'federal', 'qualification': 'Historical order',
-                       'page_range': [3,5], 'legal_currency_verified': False,
+                       'page_range': [3,5], 'legal_currency_verified': False, 'legal_status':'rescission_notices_only',
                        'caption_as_printed': 'Official caption', 'source_evidence': {'source_url': 'https://court.gov/order', 'source_path': 'C:/Users/private/source.pdf'},
                        'date_evidence': {'filed_at': {'quote': 'Filed 08/07/26', 'source_sha256': sha, 'page': 1, 'source_path': 'local.txt'}},
                        'hierarchy': [{'title': 'Part 1', 'raw_path': 'C:/private/source.txt'}]}
@@ -182,7 +182,7 @@ class EnrichmentSidecarChecks(unittest.TestCase):
 
     def test_public_dates_context_and_provenance_preserved_without_paths(self):
         public = additions.public_record(self.record)
-        for field in ('filed_at','jurisdiction','qualification','caption_as_printed','page_range','legal_currency_verified'):
+        for field in ('filed_at','jurisdiction','qualification','caption_as_printed','page_range','legal_currency_verified','legal_status'):
             self.assertEqual(public[field], self.record[field])
         self.assertEqual(public['date_evidence']['filed_at']['quote'], 'Filed 08/07/26')
         self.assertEqual(public['source_evidence']['source_url'], 'https://court.gov/order')

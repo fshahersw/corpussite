@@ -9,7 +9,7 @@ sys.path.insert(0,str(ROOT/'deploy'))
 import enrichment
 from import_catalog import normalize
 
-OUT=ROOT/'_transfer_scratch/supabase_export/additions_20260927'
+OUT=ROOT/'_transfer_scratch/supabase_export/additions_20260927_v2'
 DATASET='gap_enrichment_20260927'
 
 def sha(path):
@@ -26,7 +26,7 @@ def projection(data):
         if edge['relation']=='captured_as':captured[edge['source']].add(edge['target'])
     fields=('id','title','state','lane','resource_type','category','document_shape','native_id','source_url',
             'mdl_number','captured_at','published_at','effective_from','filed_at','source_as_of','original_url',
-            'qualification','review_status','page_range','source_page')
+            'qualification','review_status','page_range','source_page','legal_status','contains_rescinded_rule_notices')
     index={k:data[k] for k in ('available','summary','generated_at','qualification')}
     index['resources']=[enrichment.public_value({k:r[k] for k in fields if k in r}) for r in data['resources']]
     scopes={}
@@ -92,7 +92,7 @@ def main():
     if sha(enrichment.DATA/'validation.json')!=gate_sha or enrichment.state() is None:raise ValueError('Local publication changed during export')
     plan={'schema_version':1,'project':'xosqzzsnhxcyehcnirpa','generated_at':datetime.now(timezone.utc).isoformat(),'publication':'held','base_plan_modified':False,
           'files':[{'path':p.name,'sha256':sha(p),'bytes':p.stat().st_size} for p in sorted(OUT.iterdir()) if p.is_file()],
-          'records':len(data['resources']),'contexts':len(contexts),'requires':['Base migration acceptance and effective disk capacity','Import categorized dataset, then originals and contexts','Verify remote counts and hashes, context chunks and signed originals','Only then publish this dataset and all enrichment context dependencies; include delta dataset in the final release inventory']}
+          'records':len(data['resources']),'contexts':len(contexts),'supersedes_unimported_delta':'additions_20260927','revision_reason':'Expose source-recorded rescission status in reader and listing payloads','requires':['Base migration acceptance and effective disk capacity','Import categorized dataset, then originals and contexts','Verify remote counts and hashes, context chunks and signed originals','Only then publish this dataset and all enrichment context dependencies; include delta dataset in the final release inventory']}
     (OUT/'delta_plan.json').write_text(json.dumps(plan,indent=2)+'\n',encoding='utf-8');print(json.dumps({'records':plan['records'],'contexts':plan['contexts'],'publication':'held','base_plan_modified':False}))
 
 if __name__=='__main__':main()
