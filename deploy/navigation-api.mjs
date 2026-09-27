@@ -77,6 +77,6 @@ export async function handleNavigation(path,p,ctx){
   const rows=data.rows.filter(r=>(!p.q||lower(['title','description','excerpt','court_label','state','resource_kind'].map(k=>r[k]||'').join(' ')).includes(lower(p.q)))&&(!p.family||lower(r.registry_family)===lower(p.family))&&(!p.kind||lower(r.resource_kind)===lower(p.kind)));
   const result=pageRows(rows,{...p,limit:p.page_size||20},50);return {...data.card,...result,page_size:result.limit};
  }
- if(path==='/api/supplements')return await context(p.name?'supplement:'+p.name:'supplements')||notFound();
+ if(path==='/api/supplements')return p.name?await context('supplement:'+p.name)||notFound():publishedContext('supplements');
  return null;
 }

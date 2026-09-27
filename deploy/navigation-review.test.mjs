@@ -10,7 +10,8 @@ test('recognized unpublished navigation contexts return 503 instead of falling t
     ['/api/trellis-coverage/summary', 'trellis:summary'],
     ['/api/trellis-coverage/progress', 'trellis:progress'],
     ['/api/resources/circuits', 'doj:circuits'],
-    ['/api/collections', 'collections']
+    ['/api/collections', 'collections'],
+    ['/api/supplements', 'supplements']
   ];
   for (const [path, key] of routes) {
     const values = { 'doj:states': { items: [] } };
