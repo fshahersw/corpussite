@@ -99,6 +99,8 @@ Journals do not replace remote count/hash checks. Do not delete remote rows or c
 
 Import **fshahersw/corpussite** with repository root, framework **Other**, install **npm ci**, build **npm run build**, output **dist**, and Node 22 or newer as required by package.json. Configure the three server variables above. The build copies UI assets; SQLite and corpus data are not bundled into Functions.
 
+The repository pins `installCommand: "npm ci"` in `vercel.json`. This overrides installation autodetection and dashboard settings. The root Python requirements are for local corpus tools; installing them on Vercel can attempt native Python builds and fail with `cmake` missing. `.vercelignore` excludes those local Python inputs from deployments. Do not install Python build tools to work around this error. Deploy the corrected commit rather than redeploying an older failed commit.
+
 Run from repository root:
 
 ~~~powershell

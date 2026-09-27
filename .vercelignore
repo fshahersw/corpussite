@@ -20,3 +20,9 @@ delivery/focused_legal_corpus/
 **/*.log
 **/*.dpapi
 .env*
+
+# Python belongs to local collection/import workflows, not the hosted Node app.
+requirements.txt
+**/requirements*.txt
+**/*.py
+**/__pycache__/
