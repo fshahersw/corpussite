@@ -155,6 +155,36 @@ async function api(path, signal) {
   if (data.error) throw new Error(typeof data.error === 'string' ? data.error : 'The archive server could not complete this request.');
   return data;
 }
+async function checkPublicationStatus() {
+  const target = document.querySelector('#publication-notice');
+  if (!target) return;
+  target.hidden = true;
+  target.replaceChildren();
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 12000);
+  try {
+    const health = await api('/api/health', controller.signal);
+    // The local archive has its own publication process and needs no hosted notice.
+    if (health?.service !== 'legal-archive-supabase') return;
+    if (typeof health.ready !== 'boolean') throw new Error('Missing publication status');
+    if (health.ready) return;
+    const hasPublished = Array.isArray(health.datasets) && health.datasets.some(dataset => dataset.ready === true);
+    target.className = 'publication-notice';
+    append(target, el('strong', '', 'Hosted archive connected · Publication pending'),
+      el('p', '', hasPublished
+        ? 'Full publication is not complete. Some collections or pages may be unavailable. Use Refresh to check their availability.'
+        : 'Hosted collections have not been published yet, so pages may appear empty. Use Refresh to check their availability.'));
+    target.hidden = false;
+  } catch {
+    if (['localhost', '127.0.0.1', '[::1]'].includes(location.hostname) || !['http:', 'https:'].includes(location.protocol)) return;
+    target.className = 'publication-notice is-unavailable';
+    append(target, el('strong', '', 'Connection check unavailable'),
+      el('p', '', 'The hosted archive status check did not complete. Use Refresh to try again.'));
+    target.hidden = false;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
 function loading(target, text = 'Reading the saved collection…') {
   target.replaceChildren(); target.setAttribute('aria-busy', 'true');
   const box = el('div', 'state-message'); const spinner = el('div', 'spinner'); spinner.setAttribute('aria-hidden','true');
@@ -1159,4 +1189,4 @@ function applyWorkbench(){
 }
 const workbenchObserver=new MutationObserver(()=>{workbenchObserver.disconnect();try{applyWorkbench();}catch(error){console.error(error);}finally{workbenchObserver.observe(main,{childList:true});}});
 workbenchObserver.observe(main,{childList:true});
-document.addEventListener('DOMContentLoaded',()=>{route=readRoute();render();});
+document.addEventListener('DOMContentLoaded',()=>{route=readRoute();render();checkPublicationStatus();});
