@@ -52,7 +52,7 @@ export async function handlePlacesJudges(path, params, context) {
   if (!['/api/counties', '/api/judges', '/api/judge', '/api/people', '/api/person'].includes(path)) return null;
   const dataset = path.startsWith('/api/count') ? 'counties' : path.startsWith('/api/judg') ? 'judges' : 'people';
   const record = await context.dataset(dataset);
-  if (!record || record.ready === false) return error('This directory is not published yet.', 503);
+  if (!record || record.ready === false) return Response.json({error:'This directory is not published yet.',code:'publication_pending'}, {status:503});
   const meta = metadata(record);
   const baseline = meta.listing ?? {};
   const index = meta.filter_index ?? [];

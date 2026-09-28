@@ -219,11 +219,17 @@
     append(form, stateField.label, topicField.label, action('Clear', () => navigate('coverage'))); main.append(form);
     const matrix = await api('/api/coverage/matrix', signal); if (signal.aborted) return;
     setOptions(stateField.input, matrix.rows.map(r => ({ value: r.abbr, label: r.name })), 'All jurisdictions', state);
-    const catalogSource = await api(`/api/coverage/topics?limit=1${state ? '&state=' + state : ''}`, signal); if (signal.aborted) return;
+    let catalogSource;
+    try { catalogSource = await api(`/api/coverage/topics?limit=1${state ? '&state=' + state : ''}`, signal); }
+    catch (error) { if (error.code !== 'publication_pending') throw error; catalogSource = { available: false, topic_catalog: {} }; }
+    if (signal.aborted) return;
+    const topicsPending = catalogSource.available === false;
     setOptions(topicField.input, Object.entries(catalogSource.topic_catalog || {}).map(([k, v]) => ({ value: k, label: `${v.label} (${count(v.provisions)})` })), 'Choose a topic', topic);
-    form.addEventListener('change', () => navigate('coverage', { state: stateField.input.value, topic: topicField.input.value }));
-    main.append(dataNote(`${matrix.qualification} Labels are automated structural triage of already-saved pages; topic lists are ${catalogSource.label}.`));
-    if (!topic && matrix.trellis_progress) {
+    topicField.input.disabled = topicsPending;
+    if (topicsPending) { const note = el('p', 'county-section-note', 'Topic search is not yet published. State coverage and county information remain available below.'); note.setAttribute('role', 'status'); main.append(note); }
+    form.addEventListener('change', () => navigate('coverage', { state: stateField.input.value, topic: topicsPending ? '' : topicField.input.value }));
+    main.append(dataNote(`${matrix.qualification} Labels are automated structural triage of already-saved pages.${topicsPending ? '' : ` Topic lists are ${catalogSource.label}.`}`));
+    if ((!topic || topicsPending) && matrix.trellis_progress) {
       const selected=state?matrix.rows.find(r=>r.abbr===state):null;
       const progress=selected?{saved_county_urls:selected.trellis_county_profiles?.saved||0,observed_county_urls:selected.trellis_county_profiles?.observed||0,remaining_county_urls:selected.trellis_county_profiles?.unsaved||0}:matrix.trellis_progress, panel=el('section','panel');
       append(panel,el('h2','',`County profile backfill${selected?' · '+selected.name:''}`),el('p','section-intro',`${count(progress.saved_county_urls)} of ${count(progress.observed_county_urls)} discovered county-profile URLs saved · ${count(progress.remaining_county_urls)} gaps`),
@@ -231,7 +237,7 @@
         routeLink('Browse refreshed county details →','counties',{availability:'trellis_details',...(selected?{state:selected.name}:{})},'button'));
       main.append(panel);
     }
-    if (topic) {
+    if (topic && !topicsPending) {
       const params = new URLSearchParams(route.params); params.set('limit', '50'); params.set('page', Math.max(1, Number(params.get('page')) || 1));
       const data = await api(`/api/coverage/topics?${params}`, signal); if (signal.aborted) return;
       const cat = (data.topic_catalog || {})[topic] || {};
@@ -262,8 +268,8 @@
       const t = el('table'); const thead = el('thead'); const hr = el('tr'); for (const h of ['Family', 'Saved coverage']) hr.append(el('th', '', h)); thead.append(hr); t.append(thead); const tbody = el('tbody');
       for (const [key, label] of FAMILIES) { const tr = el('tr'); tr.append(el('td', '', label)); tr.append(familyCell(s.families?.[key])); tbody.append(tr); }
       t.append(tbody); const panel = el('div', 'table-panel'); const scroll = el('div', 'table-scroll'); scroll.append(t); panel.append(scroll); main.append(panel);
-      const topics = el('div', 'button-row'); for (const [k, v] of Object.entries(s.topic_counts || {})) topics.append(routeLink(`${human(k)} (${count(v)})`, 'coverage', { state, topic: k }, 'button'));
-      append(main, el('h2', 'section-heading', 'Topic candidates in saved law'), topics);
+      if (!topicsPending) { const topics = el('div', 'button-row'); for (const [k, v] of Object.entries(s.topic_counts || {})) topics.append(routeLink(`${human(k)} (${count(v)})`, 'coverage', { state, topic: k }, 'button'));
+      append(main, el('h2', 'section-heading', 'Topic candidates in saved law'), topics); }
       if (s.venues?.length) {
         append(main, el('h2', 'section-heading', 'Mass-tort venues in this state'));
         const grid = el('div', 'collection-grid');

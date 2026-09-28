@@ -3,6 +3,31 @@ const num=(value,fallback,max=100)=>Math.min(max,Math.max(1,parseInt(value,10)||
 const lower=value=>String(value??'').trim().toLowerCase();
 const notFound=()=>Response.json({error:'Saved reference not found'},{status:404});
 const publicationPending=()=>Response.json({error:'These saved resources have not been published yet. Use Refresh to check their availability.',code:'publication_pending',available:false},{status:503});
+const coveragePendingNote='Open US Law is not published in this release. Its snapshot counts are retained only as pending inventory, excluded from available coverage. Topic candidates that depend on the unpublished collection are also held. Gap flags retain their historical saved-inventory basis; they are not a survey of currently published law.';
+function pendingCoverage(source){
+ const result=structuredClone(source);
+ function row(value){
+  const inventory={available:false,status:'publication_pending',by_family:{}};
+  for(const [family,cell] of Object.entries(value.families||{}))if(Object.hasOwn(cell,'third_party_snapshot')){inventory.by_family[family]=cell.third_party_snapshot;cell.third_party_snapshot=0;}
+  for(const field of ['open_us_law_rule_sets','open_us_law_other_rows'])if(Object.hasOwn(value,field)){inventory[field]=value[field];value[field]={};}
+  value.pending_inventory={...value.pending_inventory,open_us_law:inventory};
+  if(Object.hasOwn(value,'topic_counts')){value.pending_inventory.topic_candidates={available:false,status:'source_dependency_unpublished',topic_counts:value.topic_counts};value.topic_counts={};}
+  if(Array.isArray(value.gaps)&&!value.gaps.includes('open_us_law_not_published'))value.gaps.push('open_us_law_not_published');
+ }
+ if(result.families)row(result);
+ for(const value of result.rows||[])row(value);
+ if(result.totals){
+  const inventory={available:false,status:'publication_pending',by_family:{}};
+  for(const [family,cell] of Object.entries(result.totals.by_family||{}))if(Object.hasOwn(cell,'third_party_snapshot')){inventory.by_family[family]=cell.third_party_snapshot;cell.third_party_snapshot=0;}
+  if(Object.hasOwn(result.totals,'open_us_law_court_rule_rows_typed')){inventory.open_us_law_court_rule_rows_typed=result.totals.open_us_law_court_rule_rows_typed;result.totals.open_us_law_court_rule_rows_typed=0;}
+  result.pending_inventory={...result.pending_inventory,open_us_law:inventory};
+ }
+ if(result.rows&&result.gaps)result.gaps.open_us_law_not_published=result.rows.map(value=>value.abbr);
+ result.publication={...result.publication,open_us_law_available:false,scope:'published_collections_only',gap_basis:'historical_saved_inventory'};
+ result.qualification=[result.qualification,coveragePendingNote].filter(Boolean).join(' ');
+ if(result.definitions)result.definitions.third_party_snapshot='Published Open US Law snapshot rows only. Unpublished counts are retained separately under pending_inventory.open_us_law.';
+ return result;
+}
 const pageRows=(rows,p,max=100)=>{const page=num(p.page,1,1e7),limit=num(p.limit,30,max);return {total:rows.length,items:rows.slice((page-1)*limit,page*limit),page,limit};};
 function sectionFacet(rows){
  const groups=new Map();
@@ -12,14 +37,16 @@ function sectionFacet(rows){
 export async function handleNavigation(path,p,ctx){
  const context=key=>ctx.context(key);
  const publishedContext=async key=>(await context(key))??publicationPending();
- if(path==='/api/coverage/matrix')return publishedContext('coverage:matrix');
+ const coverageContext=async key=>{const data=await context(key);if(!data)return publicationPending();if(!data.families&&!data.rows?.some(row=>row.families))return data;return (await ctx.dataset('open_us_law'))?.ready?data:pendingCoverage(data);};
+ if(path==='/api/coverage/matrix')return coverageContext('coverage:matrix');
  if(path==='/api/coverage/venues')return publishedContext('coverage:venues');
  if(path.startsWith('/api/coverage/')){
-  const aliases=await context('state:aliases')||{},state=p.state?aliases[lower(p.state)]:null;
-  if(path==='/api/coverage/state')return state?await context('coverage:state:'+state)||notFound():notFound();
+  const aliases=await context('state:aliases'),state=p.state?aliases?.[lower(p.state)]:null;
+  if(path==='/api/coverage/state')return !aliases?publicationPending():state?coverageContext('coverage:state:'+state):notFound();
   if(path==='/api/coverage/topics'||path==='/api/coverage/labels'){
    const topic=path.endsWith('topics'),dataset=topic?'coverage_topics':'coverage_labels',filters={};
    const meta=await ctx.dataset(dataset),base=topic?await context('coverage:topics'):{};
+   if(!meta?.ready)return publicationPending();
    if(p.state)filters.state=state||'__invalid__';
    for(const k of topic?['topic']:['law_body_class','rule_set','confidence'])if(p[k])filters[k]=p[k];
    const page=num(p.page,1,1e7),limit=num(p.limit,25,200);

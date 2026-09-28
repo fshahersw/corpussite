@@ -104,7 +104,7 @@ export async function handleGeneric(path,params={},context) {
   const name=aliases[match[1]];
   if (!name) return bad('Unknown data area');
   const dataset=await context.dataset(name);
-  if (!dataset?.ready) return match[2]?bad('Record is not published'):unavailable('This data layer has not passed hosted publication checks.');
+  if (!dataset?.ready) return match[2]?Response.json({error:'This collection is still being transferred.',code:'publication_pending'},{status:503}):{...unavailable('This collection is still being transferred.'),code:'publication_pending'};
   if (match[2]) {
     const id=text(params.id);
     if (!id || id.length>500) return bad('Record not found');

@@ -152,11 +152,31 @@ async function api(path, signal) {
   const response = await fetch(path, {signal, headers: {'Accept':'application/json'}, cache: 'no-store'});
   if (!response.ok) {
     const failure = await response.json().catch(() => null);
-    throw new Error(typeof failure?.error === 'string' ? failure.error : `The archive server returned HTTP ${response.status}. Please try again or refresh this page.`);
+    const error = new Error(typeof failure?.error === 'string' ? failure.error : `The archive server returned HTTP ${response.status}. Please try again or refresh this page.`);
+    error.status = response.status;
+    if (typeof failure?.code === 'string') error.code = failure.code;
+    throw error;
   }
   const data = await response.json();
-  if (data.error) throw new Error(typeof data.error === 'string' ? data.error : 'The archive server could not complete this request.');
+  if (data.error) {const error=new Error(typeof data.error==='string'?data.error:'The archive server could not complete this request.');if(typeof data.code==='string')error.code=data.code;throw error;}
   return data;
+}
+function partialHostedRelease() {
+  const health=window.ARCHIVE_PUBLICATION;
+  return health?.service==='legal-archive-supabase'&&health.release_scope==='partial'&&health.usable===true;
+}
+function hostedDatasetPending(id) {
+  const health=window.ARCHIVE_PUBLICATION;
+  if(health?.service!=='legal-archive-supabase'||health.ready===true)return false;
+  const dataset=Array.isArray(health.datasets)?health.datasets.find(row=>row.id===id):null;
+  return dataset?.ready===false||(partialHostedRelease()&&dataset?.ready!==true);
+}
+function publicationLinks(target) {
+  const health=window.ARCHIVE_PUBLICATION;
+  if(!partialHostedRelease()||!Array.isArray(health.available_views))return;
+  const links=el('nav','publication-links');links.setAttribute('aria-label','Available in this release');
+  for(const view of new Set(health.available_views))if(views[view]||extensionArea(view))links.append(routeLink(navName(view),view,{},'button-link'));
+  if(links.children.length)target.append(links);
 }
 async function checkPublicationStatus() {
   const target = document.querySelector('#publication-notice');
@@ -167,10 +187,24 @@ async function checkPublicationStatus() {
   const timeout = setTimeout(() => controller.abort(), 12000);
   try {
     const health = await api('/api/health', controller.signal);
+    window.ARCHIVE_PUBLICATION=health;
     // The local archive has its own publication process and needs no hosted notice.
     if (health?.service !== 'legal-archive-supabase') return;
     if (typeof health.ready !== 'boolean') throw new Error('Missing publication status');
     if (health.ready) return;
+    if(partialHostedRelease()){
+      const ready=(health.datasets||[]).filter(dataset=>dataset.ready===true);
+      const total=health.expected_dataset_count;
+      const collectionCount=Number.isInteger(total)&&total>=ready.length?`${count(ready.length)} of ${count(total)} collections`:`${count(ready.length)} collections`;
+      const hasCounts=ready.every(dataset=>Number.isSafeInteger(dataset.records)&&dataset.records>=0);
+      const records=hasCounts?` · ${count(ready.reduce((sum,dataset)=>sum+dataset.records,0))} catalog records`:'';
+      target.className='publication-notice';
+      append(target,el('strong','','Early release · Published collections are available'),
+        el('p','',`${collectionCount}${records}. Remaining collections are not yet published. Catalog counts can include multiple source versions and do not establish complete legal coverage.`));
+      publicationLinks(target);target.hidden=false;
+      if(typeof renderHubTabs==='function')renderHubTabs();
+      return;
+    }
     const hasPublished = Array.isArray(health.datasets) && health.datasets.some(dataset => dataset.ready === true);
     target.className = 'publication-notice';
     append(target, el('strong', '', 'Hosted archive connected · Publication pending'),
@@ -196,6 +230,10 @@ function loading(target, text = 'Reading the saved collection…') {
 function errorState(target, error, retry) {
   target.removeAttribute('aria-busy'); target.replaceChildren();
   const box = el('div', 'state-message');
+  if(error.code==='publication_pending'){
+    append(box,el('h2','','This collection is not published yet'),el('p','',error.message||'This collection is awaiting publication.'),el('p','','You can continue exploring the published collections.'),routeLink('Browse available documents','documents'));
+    publicationLinks(box);target.append(box);announce('This collection is awaiting publication.');return;
+  }
   append(box, el('h2','','Unable to load the directory'), el('p','',error.message || 'The local archive server is not responding.'));
   const local = ['localhost','127.0.0.1','[::1]'].includes(location.hostname);
   append(box, el('p','',local?'If the server is stopped, use the archive-directory launch instructions, then refresh this page. Your saved files are unchanged.':'The collection may be temporarily unavailable. Retry in a moment or return to the library.'), action('Try again', retry, 'button-primary'));
@@ -357,6 +395,7 @@ async function loadList(countyMode,form) {
   if(route.view==='county')params.set('county',route.id);
   if(!countyMode)params.set('group',views[route.view].group==='all'?(params.get('group') || 'all'):views[route.view].group);
   try {
+    if(route.view==='laws'&&window.ARCHIVE_PUBLICATION_PROMISE){await window.ARCHIVE_PUBLICATION_PROMISE;if(signal.aborted)return;}
     let hub=route.view==='laws'?{}:null,data;
     if(lawHubOpen()){hub=await api(`/api/explore?group=laws&state=${encodeURIComponent(route.params.get('state')||'')}`,signal).catch(error=>{if(error.name==='AbortError')throw error;return {unavailable:true};});if(!hub.unavailable)data={states:(hub.jurisdictions||[]).map(row=>row.state),categories:hub.categories||[],items:[],total:0};}
     if(!data)data=await api(`/api/${countyMode?'counties':'documents'}?${params}`,signal);if(signal.aborted)return;
@@ -388,13 +427,15 @@ function lawHubOpen(){return route.view==='laws'&&!['q','category','dataset','av
 function renderLawHub(data,target){
   target.replaceChildren();const state=route.params.get('state');
   if(state)target.append(routeLink(`Explore ${state} source references →`,'sources',{jurisdiction:state},'context-source-link'));
+  const bulkPending=hostedDatasetPending('open_us_law');
+  if(bulkPending)target.append(notice('The Open US Law bulk provision collection and its outline browser are not yet published. You can browse the published law and rule records below; coverage varies by state and source.'));
   if(!lawHubOpen()){append(target,routeLink(`← ${state?state+' law categories':'Browse law jurisdictions'}`,'laws',state?{state}:{},'back-link'));return;}
   if(!state){const section=el('section','law-jurisdictions');append(section,el('h2','','Explore by jurisdiction'),el('p','section-intro','Choose a state to see its collected statutes, court rules and other legal resources.'));const grid=el('div','state-grid law-state-grid');for(const row of data.jurisdictions||[]){const anchor=routeLink('', 'laws',{state:row.state},'state-link');append(anchor,el('span','',row.label||row.state),el('small','',`${count(row.total)} records`));grid.append(anchor);}section.append(grid);target.append(section);}
-  if(state&&window.LawReader){const host=el('div','lawb-host');target.append(host);window.LawReader.browser(host,state,{open:id=>openRecord({id},document.activeElement),start:{kind:route.params.get('toc'),node:route.params.get('node')}});}
+  if(state&&window.LawReader&&!bulkPending){const host=el('div','lawb-host');target.append(host);window.LawReader.browser(host,state,{open:id=>openRecord({id},document.activeElement),start:{kind:route.params.get('toc'),node:route.params.get('node')}});}
   const section=el('section','law-categories');append(section,el('h2','',state?`${state} documents by category`:'Browse by category'),el('p','section-intro','Open a category to search its saved text, original files and publisher links.'));
   const descriptions={statutes:'Enacted laws, codes and individual provisions.',rules:'Court rules, practice directions and orders.',constitutions:'Constitutional text and related provisions.',regulations:'Administrative rules and regulations.',forms:'Forms and other supporting documents.',guidance:'Practice guides and reference material.',directories:'Court and legal source directories.',other:'Additional collected legal resources.'};
   const cards=el('div','law-category-grid');for(const category of data.categories||[]){if(!Number(category.total))continue;const card=routeLink('','laws',{...(state?{state}:{}),category:category.id},'law-category-card');append(card,el('span','law-category-count',`${count(category.total)} records`),el('h3','',category.label),el('p','',descriptions[category.id]||'Collected source material.'),el('span','button-link','Browse documents →'));cards.append(card);}if(!cards.children.length)emptyState(section,'No categorized material yet','This jurisdiction has no matching records in the current library.');else section.append(cards);target.append(section);
-  const details=el('details','library-details');append(details,el('summary','','Collections & coverage'),el('p','','Counts combine saved document groups and publisher data rows. They do not establish unique laws, legal currency or complete jurisdiction coverage. Categories may overlap.'));
+  const details=el('details','library-details');if(bulkPending)details.open=true;append(details,el('summary','',bulkPending?'Published collections & coverage':'Collections & coverage'),el('p','','Counts combine saved document groups and publisher data rows. They do not establish unique laws, legal currency or complete jurisdiction coverage. Categories may overlap.'));
   const sources=el('div','hub-source-list');for(const dataset of data.datasets||[]){const entry=el('article','hub-source');append(entry,routeLink(dataset.label||datasetName(dataset.id),'laws',{...(state?{state}:{}),dataset:dataset.id}),el('p','',`${count(dataset.total)} records${dataset.snapshot_label?' · '+dataset.snapshot_label:''}`),evidenceDates(dataset.source_as_of,dataset.saved_at),dataset.snapshot_date?el('p','date-note',`Publisher snapshot: ${date(dataset.snapshot_date)}`):null,dataset.published_at?el('p','date-note',`Published ${date(dataset.published_at)}`):null);sources.append(entry);}details.append(sources);target.append(details);
 }
 function renderLibrary(countyMode,skipHeading=false) {
@@ -1102,6 +1143,9 @@ function renderHubTabs(activeView){
     if(!shown.length)continue;
     const isActive=tab===activeTab,link=el('a',isActive?'hub-tab active':'hub-tab',tab.label);
     link.href=`#${(shown.find(seg=>seg.view===tab.view)||shown[0]).view}`;
+    if(partialHostedRelease()&&Array.isArray(window.ARCHIVE_PUBLICATION.available_views)&&!shown.some(seg=>window.ARCHIVE_PUBLICATION.available_views.includes(seg.view)||(seg.supplement&&ready?.has(seg.supplement)))){
+      link.append(el('small','publication-pending-label','Not yet published'));link.title='This section is not included in the current published release.';
+    }
     if(isActive)link.setAttribute('aria-current','page');
     bar.append(link);
     if(isActive)window.ACTIVE_SEGMENTS={active:activeView,items:shown.length>1?shown:[]};
@@ -1193,4 +1237,4 @@ function applyWorkbench(){
 }
 const workbenchObserver=new MutationObserver(()=>{workbenchObserver.disconnect();try{applyWorkbench();}catch(error){console.error(error);}finally{workbenchObserver.observe(main,{childList:true});}});
 workbenchObserver.observe(main,{childList:true});
-document.addEventListener('DOMContentLoaded',()=>{route=readRoute();render();checkPublicationStatus();});
+document.addEventListener('DOMContentLoaded',()=>{route=readRoute();window.ARCHIVE_PUBLICATION_PROMISE=checkPublicationStatus();render();});

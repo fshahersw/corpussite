@@ -31,7 +31,15 @@ export function createContext(env=process.env, transport=fetch) {
     if(!value?.__corpus_chunked_v1)return value;
     if(!Array.isArray(value.parts)||value.parts.length>1000||!value.parts.every(p=>p.startsWith(key+':part:')))throw new Error('Invalid context part manifest');
     const chunks=[];
-    for(let i=0;i<value.parts.length;i+=4){const results=await Promise.all(value.parts.slice(i,i+4).map(readContext));if(results.some(p=>typeof p!=='string'))return null;chunks.push(...results);}
+    for(let i=0;i<value.parts.length;i+=25){
+      const keys=value.parts.slice(i,i+25);
+      const filter='in.('+keys.map(k=>JSON.stringify(k)).join(',')+')';
+      const rows=await request('/rest/v1/corpus_context?key='+encodeURIComponent(filter)+'&ready=eq.true&select=key,data');
+      const indexed=new Map(rows.map(row=>[row.key,row.data]));
+      const results=keys.map(key=>indexed.get(key));
+      if(results.some(part=>typeof part!=='string'))return null;
+      chunks.push(...results);
+    }
     const raw=chunks.join(''),digest=[...new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(raw)))].map(n=>n.toString(16).padStart(2,'0')).join('');
     if(digest!==value.sha256)throw new Error('Context part integrity check failed');
     return JSON.parse(raw);
@@ -59,7 +67,7 @@ export function createContext(env=process.env, transport=fetch) {
     },
     async asset(route,{optional=false}={}) {
       const rows=await request('/rest/v1/corpus_artifacts?route=eq.'+encodeURIComponent(canonicalRoute(route))+'&ready=eq.true&select=object_key,mime,filename');
-      if (!rows.length) return optional?null:Response.json({error:'This categorized original has not been migrated.'},{status:404});
+      if (!rows.length) return optional?null:Response.json({error:'This file is not available in the hosted collection yet. Saved reader text and publisher links may still be available.',code:'publication_pending'},{status:503});
       const asset=rows[0];
       const signed=await request('/storage/v1/object/sign/'+BUCKET+'/'+asset.object_key,{method:'POST',body:JSON.stringify({expiresIn:120})});
       const target=new URL('/storage/v1'+signed.signedURL,origin);
