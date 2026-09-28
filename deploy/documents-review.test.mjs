@@ -45,6 +45,22 @@ test('document pagination moves from local grouped records into publisher ordina
   assert.equal(calls[0].offset, 2); assert.equal(result.total, 11); assert.equal(result.source_total, 12);
 });
 
+test('offloaded full text never silently falls back to a database preview', async () => {
+  const context = { async asset() { return null; }, async rpc() {
+    return { text: 'Only a preview', full_text_offloaded: true, text_truncated: true };
+  } };
+  const value = await handleDocuments('/api/text', { id: 'saved-large-statute' }, context);
+  assert.equal(value.status, 503);
+  assert.equal((await value.json()).code, 'publication_pending');
+});
+
+test('published full text uses the signed complete artifact before consulting previews', async () => {
+  const original = new Response(null, { status: 302, headers: { location: 'https://example.test/full.txt' } });
+  const context = { async asset(route) { assert.equal(route, '/api/text?id=saved-large-statute'); return original; },
+    async rpc() { throw new Error('The preview must not replace the complete artifact'); } };
+  assert.equal(await handleDocuments('/api/text', { id: 'saved-large-statute' }, context), original);
+});
+
 function activeFunction(name) {
   let found;
   for (const file of fs.readdirSync('supabase/migrations').filter(file => file.endsWith('.sql')).sort()) {

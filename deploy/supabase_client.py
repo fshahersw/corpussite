@@ -13,6 +13,10 @@ class CapacityError(RuntimeError):
     """Stop the entire transfer when the project rejects writes for capacity."""
 
 
+class StatementTimeout(RuntimeError):
+    """A confirmed PostgreSQL statement timeout; caller may split its atomic batch."""
+
+
 class Client:
     def __init__(self):
         self.session = requests.Session()
@@ -36,6 +40,12 @@ class Client:
                 reason=response.text.lower()
                 if any(word in reason for word in ('read-only','read only','no space left','disk full')):
                     raise CapacityError('Supabase rejected writes because the database is read-only or out of disk. Transfer stopped; increase/verify capacity before resuming.')
+                try:
+                    error=response.json()
+                except ValueError:
+                    error={}
+                if isinstance(error,dict) and error.get('code')=='57014' and 'statement timeout' in str(error.get('message','')).lower():
+                    raise StatementTimeout(f'{method} {path.split("?")[0]}: PostgreSQL 57014: statement timeout')
             if response.status_code not in (408, 429, 500, 502, 503, 504, 520, 521, 522, 524) or attempt == 6:
                 break
             time.sleep(min(5, 1 + attempt * 2))

@@ -31,6 +31,7 @@ export async function handleDocuments(path,p,ctx){
   const value=grouped||await ctx.detail(id,id.startsWith('oul:')?['open_us_law']:id.startsWith('county-litigation:')?['county_litigation']:mainDatasets,{full});
   if(!value)return notFound();
   if(value.facets?.category_label)value.category_label=value.facets.category_label;
+  if(full&&value.full_text_offloaded)return Response.json({error:'The complete text download is not yet published',code:'publication_pending'},{status:503});
   if(full)return new Response(value.text||'',{headers:{'content-type':'text/plain; charset=utf-8'}});
   if(!grouped&&mainDatasets.includes(value.dataset)&&!value.source_records?.length){const {metadata,text,source_records,...source}=value;value.source_records=[source];}
   return value;

@@ -109,7 +109,10 @@ class ImportWriterLockTests(unittest.TestCase):
         source.with_suffix('.dataset.json').write_text(json.dumps({'id': 'test', 'expected_records': 1,
             'export_jsonl_sha256': hashlib.sha256(raw).hexdigest()}), encoding='utf8')
         executor = concurrent.futures.ThreadPoolExecutor
+        offloader = SimpleNamespace(apply=lambda row: row, validate_source=lambda dataset, digest: None,
+                                    manifest_sha256='0' * 64)
         with patch.object(module, 'LOCAL', folder), patch.object(import_lock, 'LOCK_PATH', self.path), \
+             patch.object(module, 'VerifiedLargeText', return_value=offloader), \
              patch.object(module, 'Client') as client, patch.object(sys, 'argv', ['import_catalog', str(source)]), \
              patch.object(module.sqlite3, 'connect'), \
              patch.object(module.concurrent.futures, 'ThreadPoolExecutor', wraps=executor) as pool, \
