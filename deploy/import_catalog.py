@@ -13,7 +13,7 @@ from pathlib import Path
 import sqlite3
 import threading
 from urllib.parse import quote, urlencode, urlsplit, parse_qsl
-from supabase_client import Client
+from supabase_client import Client, StatementTimeout
 from context_transfer import write_context
 from import_lock import import_writer
 
@@ -23,6 +23,59 @@ ALLOWED = {'id','dataset','category','state','county_geoids','title','source_url
 _THREAD = threading.local()
 TRANSFORM_VERSION = 'verified-full-text-preview-v1'
 PREVIEW_CHARACTERS = 1_000_000
+COUNT_ORDINAL_SPAN = 50_000
+MIN_BIGINT = -(2 ** 63)
+MAX_BIGINT = 2 ** 63 - 1
+
+
+def ordinal_bucket(value):
+    if isinstance(value, bool) or not isinstance(value, int) or not MIN_BIGINT <= value <= MAX_BIGINT:
+        raise ValueError('Catalog ordinal must be a PostgreSQL bigint')
+    return max(MIN_BIGINT, value // COUNT_ORDINAL_SPAN * COUNT_ORDINAL_SPAN)
+
+
+def exact_catalog_count(client, dataset, expected_buckets, *, max_requests=1024):
+    """Count every remote row exactly using disjoint indexed ordinal ranges.
+
+    The importer holds the shared writer lock throughout this verification. The
+    ranges include gaps and both tails, so extra remote rows are never excluded.
+    Each range must match its frozen source count, not an estimated/planned count.
+    A confirmed timeout may split a finite range; persistent failures stay closed.
+    """
+    buckets=sorted(expected_buckets)
+    if any(ordinal_bucket(k)!=k or not isinstance(expected_buckets[k],int)
+           or isinstance(expected_buckets[k],bool) or expected_buckets[k]<1 for k in buckets):
+        raise ValueError('Invalid expected ordinal buckets')
+    partitions=([(None,buckets[0],0)] if buckets else [(None,None,0)])
+    partitions += [(start,buckets[i+1] if i+1<len(buckets) else None,expected_buckets[start])
+                   for i,start in enumerate(buckets)]
+    if len(partitions)>max_requests:raise ValueError('Exact-count request budget exceeded')
+    stats={'method':'exact_disjoint_ordinal_ranges','partitions':len(partitions),'requests':0,
+           'split_timeouts':0,'ordinal_span':COUNT_ORDINAL_SPAN}
+    def count(lower,upper,depth=0):
+        if stats['requests']>=max_requests:raise RuntimeError('Exact-count request budget exceeded')
+        query=[('dataset','eq.'+dataset),('select','id'),('limit','1')]
+        if lower is not None:query.append(('ordinal','gte.'+str(lower)))
+        if upper is not None:query.append(('ordinal','lt.'+str(upper)))
+        stats['requests']+=1
+        try:
+            response=client.call('GET','/rest/v1/corpus_records?'+urlencode(query),headers={'Prefer':'count=exact'})
+        except StatementTimeout:
+            if lower is None or upper is None or upper-lower<2 or depth>=8:raise
+            stats['split_timeouts']+=1
+            middle=lower+(upper-lower)//2
+            return count(lower,middle,depth+1)+count(middle,upper,depth+1)
+        header=response.headers.get('Content-Range','')
+        matched=re.fullmatch(r'(?:\*|\d+-\d+)/(\d+)',header)
+        if not matched:raise RuntimeError('Exact remote count is absent or malformed')
+        return int(matched[1])
+    total=0
+    for lower,upper,expected in partitions:
+        actual=count(lower,upper)
+        if actual!=expected:
+            raise RuntimeError(f'Import range count mismatch: expected {expected}, received {actual}')
+        total+=actual
+    return total,stats
 
 
 class VerifiedLargeText:
@@ -193,6 +246,7 @@ def main():
     done = {r[0] for r in state.execute('select offset from batches where file=? and sha=?',(journal_key,digest))}
     transformed_done={r[0] for r in state.execute('select offset from batch_transforms where file=? and sha=? and version=? and manifest_sha=?',(journal_key,digest,TRANSFORM_VERSION,large_text.manifest_sha256))}
     total = 0
+    ordinal_buckets = {}
     offloaded_records=0
     pending = {}
     def collect(wait_all=False):
@@ -211,6 +265,8 @@ def main():
                 if raw.get('dataset') != dataset:
                     raise ValueError('Dataset identity mismatch')
                 value=normalize(raw,large_text=large_text);is_offloaded=value['detail'].get('full_text_offloaded') is True
+                bucket=ordinal_bucket(value['ordinal'])
+                ordinal_buckets[bucket]=ordinal_buckets.get(bucket,0)+1
                 rows.append(value);size+=len(line);total+=1;offloaded_records+=is_offloaded;transformed=transformed or is_offloaded
                 if len(rows)>=args.batch_rows or size>=args.batch_bytes:
                     if offset not in done or (transformed and offset not in transformed_done):
@@ -222,14 +278,14 @@ def main():
             if pending:collect(True)
     finally:
         state.close()
-    response=client.call('GET','/rest/v1/corpus_records?dataset=eq.'+quote(dataset,safe='')+'&select=id&limit=1',headers={'Prefer':'count=exact'})
-    remote=int(response.headers['Content-Range'].split('/')[-1])
+    remote,count_verification=exact_catalog_count(client,dataset,ordinal_buckets)
     if remote != total:raise RuntimeError(f'Import count mismatch: expected {total}, received {remote}')
     if total!=expected:raise RuntimeError('Export changed during import: row count mismatch')
     with path.open('rb') as source:
         if hashlib.file_digest(source,'sha256').hexdigest()!=digest:raise RuntimeError('Export changed during import: hash mismatch')
     client.json('PATCH','/rest/v1/corpus_datasets?id=eq.'+quote(dataset,safe=''),{'expected_records':total,'imported_records':total,'ready':args.activate},'return=minimal')
     receipt={'dataset':dataset,'records':total,'remote_count':remote,'source_sha256':digest,'ready':args.activate,
+        'count_verification':count_verification,
         'transform_version':TRANSFORM_VERSION,'large_text_manifest_sha256':large_text.manifest_sha256,'offloaded_records':offloaded_records}
     path.with_suffix('.import.json').write_text(json.dumps(receipt,indent=2)+'\n',encoding='utf-8')
     print(json.dumps(receipt),flush=True)

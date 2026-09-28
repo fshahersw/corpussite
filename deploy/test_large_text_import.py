@@ -8,7 +8,7 @@ import tempfile
 import threading
 import unittest
 from unittest.mock import patch
-from urllib.parse import urlencode
+from urllib.parse import urlencode, parse_qs, urlsplit
 
 import import_catalog as subject
 import supabase_client
@@ -89,7 +89,12 @@ class LargeTextFixture(unittest.TestCase):
             def __init__(self):self.catalog=[]
             def upsert(self,table,rows):
                 if table=='corpus_records':self.catalog.extend(copy.deepcopy(rows))
-            def call(self,*args,**kwargs):return type('Reply',(),{'headers':{'Content-Range':'0-0/2'}})()
+            def call(self,method,path,**kwargs):
+                query=parse_qs(urlsplit(path).query);matching=records
+                for value in query.get('ordinal',[]):
+                    op,bound=value.split('.');bound=int(bound)
+                    matching=[r for r in matching if (r.get('ordinal',0)>=bound if op=='gte' else r.get('ordinal',0)<bound)]
+                return type('Reply',(),{'headers':{'Content-Range':'*/'+str(len(matching))}})()
             def json(self,*args,**kwargs):return None
         fake=FakeClient();real_class=subject.VerifiedLargeText
         factory=lambda:real_class(self.manifest,preview_characters=20)

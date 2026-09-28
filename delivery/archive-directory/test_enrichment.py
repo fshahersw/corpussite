@@ -197,6 +197,84 @@ class EnrichmentSidecarChecks(unittest.TestCase):
         self.assertNotIn('C:/', json.dumps(result)); self.assertNotIn('/tmp/', json.dumps(result))
         self.assertEqual(additions.graph({}, self.folder)['total'], 0)
 
+    def test_related_reader_paths_preserve_scope_and_scrub_private_evidence(self):
+        result = additions.graph({'entity':'county:26001','related':'1'},self.folder)['related']
+        self.assertEqual(result['matched'],1)
+        item = result['clusters'][0]['items'][0]
+        self.assertEqual(item['id'],'addition:one')
+        self.assertEqual(item['evidence_paths'][0][0]['scope'],'statewide')
+        self.assertEqual(item['evidence_paths'][0][0]['evidence']['quote'],'Official court text')
+        self.assertNotIn('C:/',json.dumps(result))
+        self.assertFalse(result['incomplete'])
+
+    def test_related_versions_use_exact_identifiers_not_similar_titles(self):
+        self.bundle['resources'].extend([
+            {'id':'addition:old','title':'Court rule','captured_at':'2025-01-01'},
+            {'id':'addition:same_title','title':'Court rule','state':'MI'}])
+        self.bundle['edges'].extend([
+            {'source':'addition:one','target':'rule:MCR_1','relation':'has_native_identifier'},
+            {'source':'addition:old','target':'rule:MCR_1','relation':'has_native_identifier'}])
+        self.write_bundle()
+        related = additions.graph({'entity':'addition:one','related':'1'},self.folder)['related']
+        self.assertEqual(related['matched'],1)
+        item = related['clusters'][0]['items'][0]
+        self.assertEqual(item['id'],'addition:old')
+        self.assertEqual(item['captured_at'],'2025-01-01')
+        self.assertEqual(len(item['evidence_paths'][0]),2)
+        self.assertNotIn('addition:same_title',json.dumps(related))
+
+    def test_related_walk_limits_are_explicit_and_state_nodes_are_not_bridges(self):
+        self.bundle['edges'].extend([
+            {'source':'addition:one','target':'county:'+str(i),'relation':'source_names_county'} for i in range(12)])
+        self.bundle['edges'].append({'source':'addition:one','target':'state:MI','relation':'in_state'})
+        self.write_bundle()
+        self.assertNotIn('related',additions.graph({'entity':'addition:one'},self.folder))
+        related = additions.graph({'entity':'addition:one','related':'1'},self.folder)['related']
+        self.assertTrue(related['incomplete'])
+        self.assertEqual(related['walk']['visited_bridges'],8)
+        self.assertEqual(related['walk']['bridge_candidates'],14)
+
+    def optional_bundle(self):
+        folder=self.folder/'optional'; folder.mkdir()
+        body=b'Different court original'
+        (folder/'original.txt').write_bytes(body)
+        record=dict(self.record,id='county-gap:new',title='County rules',raw_sha256=hashlib.sha256(body).hexdigest())
+        edge={'id':'county-new-edge','source':record['id'],'target':'county:26001','relation':'source_names_county','evidence':{'quote':'Named county'}}
+        bundle={'available':True,'generated_at':'2026-09-28','summary':{'with_text':0,'original_documents':1},'qualification':'Evidence only',
+                'resources':[record],'nodes':[{'id':record['id'],'resource_id':record['id']},{'id':'county:26001'}],'edges':[edge]}
+        (folder/'bundle.json').write_text(json.dumps(bundle),encoding='utf-8')
+        gate={'schema_version':1,'status':'passed','ready':True,'data_files':[{'path':name,'sha256':hashlib.sha256((folder/name).read_bytes()).hexdigest()} for name in ('bundle.json','original.txt')]}
+        (folder/'validation.json').write_text(json.dumps(gate),encoding='utf-8')
+        for name,value in [('DATA',self.folder),('COUNTY_DATA',folder)]:
+            patcher=patch.object(additions,name,value);patcher.start();self.addCleanup(patcher.stop)
+        return folder,bundle,gate
+
+    def test_optional_collection_merges_scope_and_dispatches_files_to_their_own_roots(self):
+        self.optional_bundle()
+        listing=additions.listing({'county':'26001'})
+        self.assertEqual({r['id'] for r in listing['items']},{'addition:one','county-gap:new'})
+        self.assertEqual(additions.asset('addition:one')[0],b'Official court text')
+        self.assertEqual(additions.asset('county-gap:new')[0],b'Different court original')
+        self.assertNotIn('_collection_folder',json.dumps(listing))
+        self.assertEqual(additions.graph({'entity':'county:26001','related':'1'})['related']['matched'],2)
+
+    def test_held_optional_gate_does_not_hide_the_base_collection(self):
+        folder,_,gate=self.optional_bundle()
+        gate['ready']=False;(folder/'validation.json').write_text(json.dumps(gate),encoding='utf-8')
+        result=additions.listing({'county':'26001'})
+        self.assertEqual([r['id'] for r in result['items']],['addition:one'])
+        self.assertEqual(result['pending_collections'],['county_enrichment_20260928'])
+        self.assertIsNone(additions.asset('county-gap:new'))
+
+    def test_optional_identity_collision_is_held_and_cannot_replace_existing_original(self):
+        folder,bundle,gate=self.optional_bundle()
+        bundle['resources'][0]['id']='addition:one'
+        (folder/'bundle.json').write_text(json.dumps(bundle),encoding='utf-8')
+        gate['data_files'][0]['sha256']=hashlib.sha256((folder/'bundle.json').read_bytes()).hexdigest()
+        (folder/'validation.json').write_text(json.dumps(gate),encoding='utf-8')
+        self.assertEqual(additions.asset('addition:one')[0],b'Official court text')
+        self.assertEqual(additions.listing({})['pending_collections'],['county_enrichment_20260928'])
+
     def test_asset_mutation_invalidates_cached_gate(self):
         self.assertTrue(additions.state(self.folder))
         self.asset.write_bytes(b'Changed longer court text')

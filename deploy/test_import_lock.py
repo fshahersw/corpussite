@@ -117,7 +117,8 @@ class ImportWriterLockTests(unittest.TestCase):
              patch.object(module.sqlite3, 'connect'), \
              patch.object(module.concurrent.futures, 'ThreadPoolExecutor', wraps=executor) as pool, \
              patch.object(sys, 'stdout', io.StringIO()):
-            client.return_value.call.return_value = SimpleNamespace(headers={'Content-Range': '0-0/1'})
+            client.return_value.call.side_effect = [SimpleNamespace(headers={'Content-Range': '*/0'}),
+                                                    SimpleNamespace(headers={'Content-Range': '0-0/1'})]
             module.main()
             self.assertEqual(pool.call_args.kwargs['max_workers'], 1)
 
