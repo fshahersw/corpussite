@@ -10,8 +10,11 @@ const pairs = {
   'verdict-reports':'verdict_reports', 'cpsc-injury-data':'cpsc_injury_data', 'expert-rulings':'expert_rulings',
   'source-documents':'source_documents', 'citation-guide':'citation_reference', 'limitation-periods':'limitation_periods',
   'citation-index':'citation_index', court_reference:'court_reference', judge_portraits:'judge_portraits',
+  'court-forms-expansion':'court_forms_expansion_20260912',
 };
 export const aliases = Object.freeze({...pairs, ...Object.fromEntries(Object.values(pairs).map(v=>[v,v]))});
+// Separately published datasets shown inside an existing area; each joins only once its own gate passes.
+const additions = {court_documents:['court_forms_expansion_20260912']};
 const extraFilters = {
   court_documents:['court'], url_directory:['court','host'], mdl_case_inventory:['judge'],
   counsel_directory:['court'], public_laws:['year'],
@@ -40,6 +43,29 @@ function listingConfig(dataset,params) {
     if (!meta.listing_modes?.[mode]) mode=Object.keys(meta.listing_modes || {})[0];
   }
   return {meta,mode,config:presentActivitySubtype(dataset.id,meta.listing_modes?.[mode] || meta.listing || {filters:[],columns:[]})};
+}
+
+async function publishedAdditions(name,context) {
+  const rows=await Promise.all((additions[name] || []).map(id=>context.dataset(id)));
+  return rows.filter(d=>d?.ready && d.expected_records>0 && d.imported_records===d.expected_records);
+}
+
+function withAdditions(config,extras) {
+  if (!extras.length) return config;
+  const filters=(config.filters || []).map(filter=>{
+    if (!Array.isArray(filter.options)) return filter;
+    const options=new Map(filter.options.map(o=>[o.value,{...o}]));
+    for (const extra of extras) {
+      const other=(listingConfig(extra,{}).config.filters || []).find(f=>f.name===filter.name);
+      for (const o of other?.options || []) {
+        const seen=options.get(o.value);
+        options.set(o.value,seen?{...seen,count:(seen.count || 0)+(o.count || 0)}:{...o});
+      }
+    }
+    return {...filter,options:[...options.values()]};
+  });
+  const notes=extras.map(e=>listingConfig(e,{}).config.qualification).filter(Boolean);
+  return {...config,filters,qualification:[config.qualification,...notes.map(n=>'Also included: '+n)].filter(Boolean).join(' ')};
 }
 
 export function queryOptions(dataset,params={}) {
@@ -113,7 +139,8 @@ export async function handleGeneric(path,params={},context) {
       const code=/^(IN|SD):(.+)$/.exec(id);
       if (code) {source=code[1]==='IN'?'indiana_code':'sd_statutes';native=code[2];}
     }
-    const loaded=await context.detail(native,[source],{full:false});
+    const extras=source===name?(await publishedAdditions(name,context)).map(d=>d.id):[];
+    const loaded=await context.detail(native,[source,...extras],{full:false});
     if (!loaded) return bad('Record not found');
     const detail=presentActivitySubtype(source,loaded);
     const extra=typeof context.context==='function' ? await context.context(`generic:extra:${source}:${native}`) : null;
@@ -133,6 +160,8 @@ export async function handleGeneric(path,params={},context) {
   }
   const options=queryOptions(dataset,params);
   if (name==='judge_portraits') return {...options.config,available:true,results:[]};
+  const extras=await publishedAdditions(name,context);
+  if (extras.length) options.query.datasets=[name,...extras.map(d=>d.id)];
   const data=await context.query(options.query);
-  return {...options.config,available:true,total:data.total,page:options.page,limit:options.limit,results:(data.items || []).map(item=>presentActivitySubtype(name,item))};
+  return {...withAdditions(options.config,extras),available:true,total:data.total,page:options.page,limit:options.limit,results:(data.items || []).map(item=>presentActivitySubtype(name,item))};
 }

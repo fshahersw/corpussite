@@ -4,9 +4,53 @@ import {aliases,handleGeneric,queryOptions} from './generic-api.mjs';
 
 const data=(id,metadata={})=>({id,ready:true,metadata:{listing:{available:true,total:8,limit:25,filters:[{name:'q'},{name:'state'},{name:'court'},{name:'dfrom'},{name:'dto'}],columns:[{key:'title'}]},...metadata}});
 
-test('all 32 canonical adapters and 61 aliases are registered',()=>{
-  assert.equal(new Set(Object.values(aliases)).size,32);
-  assert.equal(Object.keys(aliases).length,61);
+test('all 33 canonical adapters and 63 aliases are registered',()=>{
+  assert.equal(new Set(Object.values(aliases)).size,33);
+  assert.equal(Object.keys(aliases).length,63);
+});
+
+const courtListing=(total,options)=>({listing:{available:true,total,limit:25,qualification:'Primary scope.',filters:[{name:'q'},{name:'doc_type',options}],columns:[{key:'document'}]}});
+function courtContext(addition) {
+  const calls={};
+  const context={
+    dataset:async id=>id==='court_documents'
+      ? {id,ready:true,expected_records:3,imported_records:3,metadata:courtListing(3,[{value:'court_form',label:'Court form',count:2},{value:'local_rule',label:'Local rule',count:1}])}
+      : addition,
+    query:async q=>(calls.query=q,{total:7,items:[{id:'court-forms-20260912:abc'}]}),
+    detail:async(...args)=>(calls.detail=args,{title:'Form',facts:[],sections:[]}),
+  };
+  return {calls,context};
+}
+const addition=(overrides={})=>({id:'court_forms_expansion_20260912',ready:true,expected_records:4,imported_records:4,
+  metadata:{listing:{qualification:'Official court forms (retrieved 2026-09-12).',filters:[{name:'doc_type',options:[{value:'court_form',label:'Court form',count:3},{value:'supporting_material',label:'Instructions / supporting material',count:1}]}]}},...overrides});
+
+test('an unpublished or incomplete addition never joins its host area',async()=>{
+  for (const held of [{ready:false},addition({ready:false}),addition({imported_records:3}),null]) {
+    const {calls,context}=courtContext(held);
+    const result=await handleGeneric('/api/area/court-documents',{},context);
+    assert.deepEqual(calls.query.datasets,['court_documents']);
+    assert.deepEqual(result.filters[1].options.map(o=>[o.value,o.count]),[['court_form',2],['local_rule',1]]);
+    assert.equal(result.qualification,'Primary scope.');
+    await handleGeneric('/api/area/court-documents/item',{id:'x'},context);
+    assert.deepEqual(calls.detail[1],['court_documents']);
+  }
+});
+test('a published addition joins listing, merged facet counts and record details',async()=>{
+  const {calls,context}=courtContext(addition());
+  const result=await handleGeneric('/api/area/court-documents',{doc_type:'court_form'},context);
+  assert.deepEqual(calls.query.datasets,['court_documents','court_forms_expansion_20260912']);
+  assert.deepEqual(calls.query.filters,{_listing:'yes',doc_type:'court_form'});
+  assert.deepEqual(result.filters[1].options.map(o=>[o.value,o.count]),[['court_form',5],['local_rule',1],['supporting_material',1]]);
+  assert.equal(result.qualification,'Primary scope. Also included: Official court forms (retrieved 2026-09-12).');
+  assert.equal(result.total,7);
+  await handleGeneric('/api/area/court-documents/item',{id:'court-forms-20260912:abc'},context);
+  assert.deepEqual(calls.detail,['court-forms-20260912:abc',['court_documents','court_forms_expansion_20260912'],{full:false}]);
+});
+test('addition originals use their own registered route',async()=>{
+  let path;const context={asset:async p=>(path=p,new Response(null,{status:302,headers:{Location:'https://example.test/signed'}}))};
+  const route='/supplement-files/court_forms_expansion_20260912/court-forms-20260912:abc';
+  assert.equal((await handleGeneric(route,{},context)).status,302);
+  assert.equal(path,route);
 });
 test('listing preserves filters/columns and uses dynamic filtered count and pagination',async()=>{
   let request;
