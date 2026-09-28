@@ -63,13 +63,16 @@ test('bounded datasets page through corpus_query_bounded with facet totals, capp
   const listing={total:2159363,filters:[{name:'q'},{name:'court',options:[{value:'cand',count:121093}]},{name:'year',options:[{value:'2024',count:94718}]}],columns:[]};
   const opinions={id:'federal_opinions_20260820',ready:true,metadata:{bounded:true,listing}};
   let answer={total:null,total_capped:false,items:[{id:'a'}]};
-  const context={dataset:async()=>opinions,queryBounded:async q=>(calls.push(q),answer),query:async()=>{throw new Error('corpus_query must not run for bounded datasets');}};
+  const context={dataset:async()=>opinions,queryBounded:async q=>(calls.push(q),answer),query:async q=>(calls.push(['exact',q]),{total:50,items:[]})};
   let result=await handleGeneric('/api/area/federal-opinions',{},context);
   assert.deepEqual(calls.at(-1),{dataset:'federal_opinions_20260820',filters:{_listing:'yes'},q:'',limit:25,offset:0,cap:10000});
   assert.deepEqual([result.total,result.total_capped,result.results],[2159363,false,[{id:'a'}]]);
   answer={total:10000,total_capped:true,items:[]};
   result=await handleGeneric('/api/area/federal-opinions',{court:'cand',dfrom:'2020-01-01',dto:'2020-12-31'},context);
-  assert.deepEqual(calls.at(-1).filters,{_listing:'yes',court:'cand'});
+  assert.equal(calls.at(-1)[0],'exact');
+  assert.equal(calls.at(-1)[1].filters.__dfrom,'2020-01-01');
+  assert.equal(result.total,50);
+  result=await handleGeneric('/api/area/federal-opinions',{court:'cand'},context);
   assert.deepEqual([result.total,result.total_capped],[121093,false]);
   result=await handleGeneric('/api/area/federal-opinions',{court:'cand',year:'2024'},context);
   assert.deepEqual([result.total,result.total_capped],[10000,true]);
@@ -80,6 +83,24 @@ test('bounded datasets page through corpus_query_bounded with facet totals, capp
   assert.equal(calls.length,before);
   assert.equal(result.available,false);
   assert.match(result.reason,/first 10,000 matches/);
+});
+
+test('bounded mode listings use the mode total, and substring filters stay on the exact query',async()=>{
+  const calls=[];
+  const injury={id:'cpsc_injury_data',ready:true,metadata:{bounded:true,mode_parameter:'dataset',listing_modes:{
+    neiss:{total:410201,filters:[{name:'product',type:'search'},{name:'year',type:'select',options:[{value:'2024',count:1000}]}]},
+    saferproducts:{total:69333,filters:[]}}}};
+  const context={dataset:async()=>injury,
+    queryBounded:async query=>(calls.push(['bounded',query]),{total:10000,total_capped:true,items:[]}),
+    query:async query=>(calls.push(['query',query]),{total:7,items:[]})};
+  let result=await handleGeneric('/api/area/cpsc-injury-data',{dataset:'neiss'},context);
+  assert.equal(calls.at(-1)[0],'bounded');
+  assert.deepEqual([result.total,result.total_capped],[410201,false]);
+  result=await handleGeneric('/api/area/cpsc-injury-data',{dataset:'neiss',year:'2024'},context);
+  assert.deepEqual([result.total,result.total_capped],[1000,false]);
+  result=await handleGeneric('/api/area/cpsc-injury-data',{dataset:'neiss',product:'aspirin'},context);
+  assert.equal(calls.at(-1)[0],'query');
+  assert.equal(result.total,7);
 });
 
 test('a record without its own qualification carries the collection detail note; its own note wins',async()=>{

@@ -106,9 +106,9 @@ export function queryOptions(dataset,params={}) {
 // Multi-million-row datasets (metadata.bounded) page through corpus_query_bounded, which counts at
 // most BOUNDED_CAP matches; unfiltered and single-facet totals come from the published facet counts.
 const BOUNDED_CAP=10000;
-function boundedTotal(config,filters,q,data) {
-  const keys=Object.keys(filters).filter(k=>!k.startsWith('_'));
-  if (!q && !keys.length) return {total:config.total ?? 0,capped:false};
+function boundedTotal(meta,config,filters,q,data) {
+  const keys=Object.keys(filters).filter(k=>!k.startsWith('_') && k!==meta.mode_parameter);
+  if (!q && !keys.length && Number.isInteger(config.total)) return {total:config.total,capped:false};
   if (!q && keys.length===1) {
     const option=(config.filters || []).find(f=>f.name===keys[0])?.options?.find(o=>o.value===filters[keys[0]]);
     if (Number.isInteger(option?.count)) return {total:option.count,capped:false};
@@ -121,7 +121,7 @@ async function boundedListing(name,options,context) {
   const {q,limit,offset}=options.query;
   if (offset>=BOUNDED_CAP) return {...options.config,...unavailable('Only the first 10,000 matches can be paged. Add a filter or search to narrow the list.')};
   const data=await context.queryBounded({dataset:name,filters,q,limit,offset,cap:BOUNDED_CAP});
-  const {total,capped}=boundedTotal(options.config,filters,q,data);
+  const {total,capped}=boundedTotal(options.meta,options.config,filters,q,data);
   return {...options.config,available:true,total,total_capped:capped,page:options.page,limit,results:data.items || []};
 }
 
@@ -183,7 +183,9 @@ export async function handleGeneric(path,params={},context) {
   }
   const options=queryOptions(dataset,params);
   if (name==='judge_portraits') return {...options.config,available:true,results:[]};
-  if ((dataset.metadata || dataset).bounded) return await boundedListing(name,options,context);
+  // Date ranges and substring filters are not indexable on the bounded path, so those
+  // requests keep the exact listing query.
+  if ((dataset.metadata || dataset).bounded && !Object.keys(options.query.filters).some(key=>key.startsWith('__'))) return await boundedListing(name,options,context);
   const extras=await publishedAdditions(name,context);
   if (extras.length) options.query.datasets=[name,...extras.map(d=>d.id)];
   const data=await context.query(options.query);
