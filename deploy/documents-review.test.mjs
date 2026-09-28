@@ -73,8 +73,8 @@ function activeFunction(name) {
 }
 test('active grouped SQL scopes colliding preferred IDs and sources to main datasets', () => {
   const listing = activeFunction('corpus_documents_local');
-  const groups = listing.match(/groups\s+as(?:\s+not\s+materialized)?\s*\(([\s\S]*?)\),\s*candidates/i)?.[1];
-  assert.ok(groups && /r\.dataset\s*=\s*any/i.test(groups), 'preferred-record join must exclude new judges/people/other datasets');
+  const preferredJoin = listing.match(/join\s+public\.corpus_records\s+r\s+on\s+r\.id\s*=\s*g\.preferred_id([\s\S]*?)(?=\s+join|\s+where)/i)?.[1];
+  assert.ok(preferredJoin && /r\.dataset\s*=\s*any/i.test(preferredJoin), 'preferred-record join must exclude new judges/people/other datasets');
   const detail = activeFunction('corpus_group_detail');
   const sources = detail.slice(detail.toLowerCase().indexOf('select jsonb_agg'));
   assert.match(sources, /r\.dataset\s*=\s*any/i, 'source_records must exclude colliding IDs outside the main catalog');

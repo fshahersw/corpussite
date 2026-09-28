@@ -4,6 +4,13 @@ import test from 'node:test';
 import vm from 'node:vm';
 
 const source=fs.readFileSync(new URL('../delivery/archive-directory/areas.js',import.meta.url),'utf8');
+test('a published research area can open without the global supplement directory',async()=>{
+ const calls=[],item={name:'federal_regulations_20260919',ready:true};
+ const context=vm.createContext({encodeURIComponent,api:async path=>{calls.push(path);return item;}});
+ vm.runInContext(source.slice(source.indexOf('  async function supplementStatus('),source.indexOf('  function statusCard(')),context);
+ assert.equal(await context.supplementStatus(item.name,{}),item);
+ assert.deepEqual(calls,['/api/supplements?name=federal_regulations_20260919']);
+});
 const start=source.indexOf('  const FAMILIES ='),end=source.indexOf('  /* ---- Regulations',start);
 assert.ok(start>=0&&end>start);
 class Element{

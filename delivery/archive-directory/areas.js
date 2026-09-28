@@ -44,8 +44,8 @@
   ];
 
   async function supplementStatus(name, signal) {
-    const data = await api('/api/supplements', signal);
-    return (data.items || []).find(item => item.name === name) || null;
+    try { return await api(`/api/supplements?name=${encodeURIComponent(name)}`, signal); }
+    catch (error) { if (error.status === 404) return null; throw error; }
   }
 
   function statusCard(area, item) {
