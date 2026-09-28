@@ -48,6 +48,9 @@ export function createContext(env=process.env, transport=fetch) {
     async query({datasets=null,filters={},q='',limit=25,offset=0,sort='ordinal'}={}) {
       return rpc('corpus_query',{p_datasets:datasets,p_filters:filters,p_q:q,p_limit:limit,p_offset:offset,p_sort:sort});
     },
+    async queryBounded({dataset,filters={},q='',limit=25,offset=0,cap=10000}={}) {
+      return rpc('corpus_query_bounded',{p_dataset:dataset,p_filters:filters,p_q:q,p_limit:limit,p_offset:offset,p_count_cap:cap});
+    },
     async detail(id,datasets=null,{full=false}={}) {
       return rpc('corpus_detail',{p_id:String(id),p_datasets:datasets,p_full:full});
     },

@@ -1121,6 +1121,7 @@ const HUBS=[
     {view:'courts',label:'Courts',supplement:'court_spine_20260919',segments:[
       {view:'courts',label:'Court registry',hint:'Every court with identifiers and marks',supplement:'court_spine_20260919'},
       {view:'court-documents',label:'Court documents',hint:'Forms, local rules, orders and fee schedules',supplement:'court_document_library_20260919'},
+      {view:'federal-opinions',label:'Federal opinions',hint:'Federal court opinions from GovInfo, by court, case type and date',supplement:'federal_court_opinions_20260820'},
       {view:'court-coverage',label:'Court document coverage',hint:'Existing forms and rules mapped to 270 source court entries',supplement:'docsupload_coverage_20260927'},
       {view:'uscourts',label:'U.S. Courts publications',hint:'Saved uscourts.gov pages and reports',supplement:'uscourts_pages_20260919'},
       {view:'statistics',label:'Court statistics',hint:'Caseload tables and per-judge reports',supplement:'federal_court_statistics_20260919'},

@@ -10,11 +10,11 @@ const pairs = {
   'verdict-reports':'verdict_reports', 'cpsc-injury-data':'cpsc_injury_data', 'expert-rulings':'expert_rulings',
   'source-documents':'source_documents', 'citation-guide':'citation_reference', 'limitation-periods':'limitation_periods',
   'citation-index':'citation_index', court_reference:'court_reference', judge_portraits:'judge_portraits',
-  'court-forms-expansion':'court_forms_expansion_20260912', 'mdl-3080-docket':'mdl_3080_docket_documents_20260928',
+  'court-forms-expansion':'court_forms_expansion_20260912', 'federal-opinions':'federal_opinions_20260820',
 };
 export const aliases = Object.freeze({...pairs, ...Object.fromEntries(Object.values(pairs).map(v=>[v,v]))});
 // Separately published datasets shown inside an existing area; each joins only once its own gate passes.
-const additions = {court_documents:['court_forms_expansion_20260912','mdl_3080_docket_documents_20260928']};
+const additions = {court_documents:['court_forms_expansion_20260912']};
 const extraFilters = {
   court_documents:['court'], url_directory:['court','host'], mdl_case_inventory:['judge'],
   counsel_directory:['court'], public_laws:['year'],
@@ -103,6 +103,28 @@ export function queryOptions(dataset,params={}) {
   return {meta,config,mode,page,limit,query:{datasets:[dataset.id],filters,q:text(params.q),limit,offset:(page-1)*limit,sort:'ordinal'}};
 }
 
+// Multi-million-row datasets (metadata.bounded) page through corpus_query_bounded, which counts at
+// most BOUNDED_CAP matches; unfiltered and single-facet totals come from the published facet counts.
+const BOUNDED_CAP=10000;
+function boundedTotal(config,filters,q,data) {
+  const keys=Object.keys(filters).filter(k=>!k.startsWith('_'));
+  if (!q && !keys.length) return {total:config.total ?? 0,capped:false};
+  if (!q && keys.length===1) {
+    const option=(config.filters || []).find(f=>f.name===keys[0])?.options?.find(o=>o.value===filters[keys[0]]);
+    if (Number.isInteger(option?.count)) return {total:option.count,capped:false};
+  }
+  return {total:data.total ?? 0,capped:Boolean(data.total_capped)};
+}
+
+async function boundedListing(name,options,context) {
+  const {__dfrom,__dto,__date_type,...filters}=options.query.filters;
+  const {q,limit,offset}=options.query;
+  if (offset>=BOUNDED_CAP) return {...options.config,...unavailable('Only the first 10,000 matches can be paged. Add a filter or search to narrow the list.')};
+  const data=await context.queryBounded({dataset:name,filters,q,limit,offset,cap:BOUNDED_CAP});
+  const {total,capped}=boundedTotal(options.config,filters,q,data);
+  return {...options.config,available:true,total,total_capped:capped,page:options.page,limit,results:data.items || []};
+}
+
 async function stateCodes(params,context,hub) {
   const state=text(params.state).toUpperCase();
   const destination={IN:'indiana_code',SD:'sd_statutes'}[state];
@@ -142,7 +164,8 @@ export async function handleGeneric(path,params={},context) {
     const extras=source===name?(await publishedAdditions(name,context)).map(d=>d.id):[];
     const loaded=await context.detail(native,[source,...extras],{full:false});
     if (!loaded) return bad('Record not found');
-    const detail=presentActivitySubtype(source,loaded);
+    const note=source===name && !loaded.qualification ? (dataset.metadata || dataset).detail_note : null;
+    const detail=presentActivitySubtype(source,note?{...loaded,qualification:note}:loaded);
     const extra=typeof context.context==='function' ? await context.context(`generic:extra:${source}:${native}`) : null;
     if (!extra) return detail;
     const factLabel=f=>Array.isArray(f)?f[0]:f.label;
@@ -160,6 +183,7 @@ export async function handleGeneric(path,params={},context) {
   }
   const options=queryOptions(dataset,params);
   if (name==='judge_portraits') return {...options.config,available:true,results:[]};
+  if ((dataset.metadata || dataset).bounded) return await boundedListing(name,options,context);
   const extras=await publishedAdditions(name,context);
   if (extras.length) options.query.datasets=[name,...extras.map(d=>d.id)];
   const data=await context.query(options.query);

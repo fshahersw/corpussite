@@ -9,6 +9,7 @@ const dependencies = {
   url_directory_20260919:['url_directory'],
   state_coordinated_proceedings_20260919:['state_proceedings'],
   court_document_library_20260919:['court_documents'],
+  federal_court_opinions_20260820:['federal_opinions_20260820'],
   sd_statutes_20260919:['sd_statutes'],
   saved_web_pages_20260919:['saved_pages'],
   indiana_code_2026_20260919:['indiana_code'],

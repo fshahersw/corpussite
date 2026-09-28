@@ -46,14 +46,51 @@ test('a published addition joins listing, merged facet counts and record details
   await handleGeneric('/api/area/court-documents/item',{id:'court-forms-20260912:abc'},context);
   assert.deepEqual(calls.detail,['court-forms-20260912:abc',['court_documents','court_forms_expansion_20260912'],{full:false}]);
 });
-test('each addition joins independently; a held one never appears beside a published one',async()=>{
-  const docket={id:'mdl_3080_docket_documents_20260928',ready:false,expected_records:2,imported_records:2,metadata:{listing:{filters:[]}}};
-  const {calls,context}=courtContext(addition(),{mdl_3080_docket_documents_20260928:docket});
-  await handleGeneric('/api/area/court-documents',{},context);
-  assert.deepEqual(calls.query.datasets,['court_documents','court_forms_expansion_20260912']);
-  docket.ready=true;
-  await handleGeneric('/api/area/court-documents',{},context);
-  assert.deepEqual(calls.query.datasets,['court_documents','court_forms_expansion_20260912','mdl_3080_docket_documents_20260928']);
+test('federal opinions area stays held until published, then queries only its own dataset',async()=>{
+  let query;
+  const opinions={id:'federal_opinions_20260820',ready:false,metadata:{listing:{filters:[{name:'q'},{name:'court'},{name:'year'}],columns:[{key:'case'}]}}};
+  const context={dataset:async()=>opinions,query:async q=>(query=q,{total:2,items:[{id:'USCOURTS-cand-3_24-cv-1'}]})};
+  assert.equal((await handleGeneric('/api/area/federal-opinions',{},context)).code,'publication_pending');
+  opinions.ready=true;
+  const result=await handleGeneric('/api/area/federal-opinions',{court:'cand',year:'2024'},context);
+  assert.deepEqual(query.datasets,['federal_opinions_20260820']);
+  assert.deepEqual(query.filters,{_listing:'yes',court:'cand',year:'2024'});
+  assert.equal(result.total,2);
+});
+
+test('bounded datasets page through corpus_query_bounded with facet totals, capped counts and a paging limit',async()=>{
+  const calls=[];
+  const listing={total:2159363,filters:[{name:'q'},{name:'court',options:[{value:'cand',count:121093}]},{name:'year',options:[{value:'2024',count:94718}]}],columns:[]};
+  const opinions={id:'federal_opinions_20260820',ready:true,metadata:{bounded:true,listing}};
+  let answer={total:null,total_capped:false,items:[{id:'a'}]};
+  const context={dataset:async()=>opinions,queryBounded:async q=>(calls.push(q),answer),query:async()=>{throw new Error('corpus_query must not run for bounded datasets');}};
+  let result=await handleGeneric('/api/area/federal-opinions',{},context);
+  assert.deepEqual(calls.at(-1),{dataset:'federal_opinions_20260820',filters:{_listing:'yes'},q:'',limit:25,offset:0,cap:10000});
+  assert.deepEqual([result.total,result.total_capped,result.results],[2159363,false,[{id:'a'}]]);
+  answer={total:10000,total_capped:true,items:[]};
+  result=await handleGeneric('/api/area/federal-opinions',{court:'cand',dfrom:'2020-01-01',dto:'2020-12-31'},context);
+  assert.deepEqual(calls.at(-1).filters,{_listing:'yes',court:'cand'});
+  assert.deepEqual([result.total,result.total_capped],[121093,false]);
+  result=await handleGeneric('/api/area/federal-opinions',{court:'cand',year:'2024'},context);
+  assert.deepEqual([result.total,result.total_capped],[10000,true]);
+  result=await handleGeneric('/api/area/federal-opinions',{court:'cand',q:'acme'},context);
+  assert.deepEqual([calls.at(-1).q,result.total,result.total_capped],['acme',10000,true]);
+  const before=calls.length;
+  result=await handleGeneric('/api/area/federal-opinions',{court:'cand',page:'401'},context);
+  assert.equal(calls.length,before);
+  assert.equal(result.available,false);
+  assert.match(result.reason,/first 10,000 matches/);
+});
+
+test('a record without its own qualification carries the collection detail note; its own note wins',async()=>{
+  const opinions={id:'federal_opinions_20260820',ready:true,metadata:{detail_note:'Directory entry only.',listing:{filters:[],columns:[]}}};
+  let loaded={title:'Azam v. Palm Beach County',facts:[['Court','S.D. Fla.']]};
+  const context={dataset:async()=>opinions,detail:async()=>loaded};
+  assert.equal((await handleGeneric('/api/area/federal-opinions/item',{id:'USCOURTS-flsd-9_25-cv-80192'},context)).qualification,'Directory entry only.');
+  loaded={...loaded,qualification:'Record note.'};
+  assert.equal((await handleGeneric('/api/area/federal-opinions/item',{id:'USCOURTS-flsd-9_25-cv-80192'},context)).qualification,'Record note.');
+  delete opinions.metadata.detail_note; loaded={title:'x'};
+  assert.equal((await handleGeneric('/api/area/federal-opinions/item',{id:'x'},context)).qualification,undefined);
 });
 test('addition originals use their own registered route',async()=>{
   let path;const context={asset:async p=>(path=p,new Response(null,{status:302,headers:{Location:'https://example.test/signed'}}))};
