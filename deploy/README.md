@@ -1,117 +1,109 @@
 # Native Supabase / Vercel deployment
 
-**Migration is incomplete. Production release is held.** The hosted application uses Vercel server routes, Supabase Postgres/RPCs and private Supabase Storage. It no longer requires a hosted Python/SQLite server. The existing localhost application remains the comparison baseline.
+**The authorized one-time migration is in progress. Publication gates remain held; this is not a completed-release claim.** Scheduled collection stays paused. The hosted application uses Vercel server routes, Supabase Postgres/RPCs and private Storage; it does not require a hosted Python/SQLite server. Localhost remains the feature-comparison baseline.
 
-## Checkpoint: 2026-09-27 21:06 UTC
+## Capacity and frozen release
 
-- All import writers are intentionally stopped. Keep scheduled collection paused.
-- The user authorized **64 GB of database disk only**, estimated at **approximately $7/month additional**. No compute upgrade or larger disk change is authorized.
-- The dashboard still showed **8 GB allocated, 2.09 GB used**, with **t3.micro / 1 GB compute**. The 64 GB change was **not performed**.
-- Disk editing was disabled by the rolling 24-hour, four-change limit. The displayed cooldown was **3 hours 51 minutes** at 21:06 UTC. This is a historical observation, not a guarantee of when the control will become available.
-- Logs confirmed disk-full/read-only failures during the earlier parallel import, plus eight-second PostgREST timeouts. Logical database size or a healthy status alone does not establish physical disk headroom.
+The database disk has been increased to **64 GB**, with its maximum capped at **64 GB**. Micro compute is unchanged. Additional Storage spending is authorized up to **$1/month**, with a **34 GiB cumulative transfer ceiling** for this run. These limits do not authorize a compute upgrade, another disk increase, an overage or a new purchase. Inspect actual usage and the active writer before any resume; a byte ceiling is not a billing guarantee.
 
-When the dashboard permits the already-authorized change, apply **64 GB only** and verify that capacity is effective before resuming. Do not upgrade compute, increase the authorized ceiling, disable read-only protection, or restart writers just because time has elapsed. Recheck disk, processes and receipts. Do not create an automatic resume task.
+The frozen release inventory is:
 
-Local evidence and resumable files are under reports/supabase_migration_20260927/ and _transfer_scratch/supabase_export/. These private data/checkpoint directories are not part of the Git/Vercel payload.
+| Required component | Expected count |
+|---|---:|
+| Categorized datasets | 69 |
+| Catalog records | 5,268,216 |
+| Final context rows, including required chunks | 44,611 |
+| Display groups | 45,638 |
+| Law collections / outline nodes / source segments | 224 / 196,458 / 818,617 |
+| Artifact routes | 103,805 |
+| Distinct private objects | 99,622 |
+
+These are expected release counts, not a statement that every item is uploaded or verified. The base plan and approved enrichment delta, descriptors, JSONL files, acceptance manifests and progress journals are immutable inputs. Unmapped records are excluded; source distinctions, dates, review flags and original references remain intact. Do not rebuild the main local database or restart scraping for this deployment.
 
 ## Runtime architecture
 
 | Component | Responsibility |
 |---|---|
-| delivery/archive-directory/ → dist/ | Browser UI and static visual assets |
-| middleware.js, api/archive.js | Public read-only access and routing of existing archive URLs |
-| deploy/cloud-api.mjs and domain adapters | Pages, filters, readers, navigation and download contracts |
-| deploy/cloud-context.mjs | Server-only Supabase access, readiness gates, context assembly and signed assets |
-| supabase/migrations/ | Postgres schema, search/filter RPCs, outline/group tables and access controls |
-| deploy/exporters/ | Category-selected, source-bound exports from the local archive |
-| deploy/import_*.py | Explicit operator-run staging imports and local progress receipts |
+| `delivery/archive-directory/` → `dist/` | Browser UI and static visual assets |
+| `middleware.js`, `api/archive.js` | Public read-only access and existing URL routing |
+| `deploy/cloud-api.mjs` and domain adapters | Lists, filters, readers, navigation and downloads |
+| `deploy/cloud-context.mjs` | Server-only Supabase access, readiness, context assembly and signed assets |
+| `supabase/migrations/` | Schema, search/filter RPCs, groups, outline and access controls |
+| `deploy/exporters/`, `deploy/import_*.py` | Operator-run exports, staging imports and resumable receipts |
 
-The target is project **xosqzzsnhxcyehcnirpa**, at https://xosqzzsnhxcyehcnirpa.supabase.co. The client is deliberately pinned to this project; changing the URL is not a supported project switch.
+Runtime and importer clients are pinned to project **xosqzzsnhxcyehcnirpa**, at `https://xosqzzsnhxcyehcnirpa.supabase.co`. Replacing an environment URL is not a supported project migration. Data exports, credentials and operator receipts are excluded from Git and Vercel builds.
 
-The core export contains **3,026,912 categorized records**: 58,289 main records and 2,968,623 Open US Law records. County, judge, court and reference layers have additional manifests. These are **local export counts, not completed cloud counts**. Unmapped/unknown records are excluded; source distinctions, dates, review flags and original references are retained. Do not rebuild the large local database or restart collection to deploy these checkpoints.
+### Readers, search and private assets
 
-### Private originals and complete text
+Originals, portraits and cleaned-text derivatives use the private `corpus-originals` bucket. `corpus_artifacts` maps same-origin routes to content-addressed objects. The server verifies readiness and returns short-lived signed URLs. The browser never receives the server secret or permanent public object access.
 
-Originals, portraits and derivatives use the private **corpus-originals** bucket. The corpus_artifacts table maps existing same-origin routes to content-addressed objects. The server checks readiness and issues a short-lived signed URL. Neither the Supabase secret nor a permanent public object URL goes to the browser.
+Readers use bounded previews. The reviewed large-text export contains 155 exact cleaned-text files with 233 record/group aliases; complete downloads redirect to Storage. The importer verifies the full file and source hash before storing a preview. Missing unpublished full-text assets return an explicit unavailable response, never a preview presented as a complete download. Originals remain separate from cleaned derivatives.
 
-The ordinary reader shows a bounded preview. Exact full cleaned text above **3,145,728 UTF-8 bytes** is exported separately so large /api/text?id=... downloads can redirect to Storage instead of crossing a Vercel response-size limit. The current text-assets manifest contains **155 files / 233 record-and-group route aliases**, totaling 814,322,556 bytes. Its largest file is 82,070,039 bytes; verify that the bucket file-size setting permits it before uploading this phase. These are cleaned-reader derivatives; original publisher files remain separate.
+Search normally indexes the title plus the first one million text characters. The bounded-search migration preserves all existing vectors/index entries and all source text. New writes try the prior expression first; only the exact PostgreSQL tsvector-size error shortens the searchable prefix until it fits. Exceptionally large records can therefore have less searchable text. Other errors propagate. Changing the helper later does not automatically reindex previously stored rows.
 
-### Readiness and large contexts
-
-Imports stage datasets and context rows with **ready=false**. Large metadata/context values go through deploy/context_transfer.py: values over approximately 400 KB are split into 120,000-character pieces, with a parent manifest and SHA-256. The runtime reads only ready context rows and verifies the assembled hash. Every required piece and its parent must pass validation before publication. A dataset whose required context cannot be read remains unavailable.
-
-Do not post a large context JSON object directly or mark all context rows ready in bulk. Keep the law outline gated together with its matching Open US Law rows and source row IDs. A successful build or /api/health response alone does not prove complete context, artifact or feature migration.
+Large context values are chunked with a parent manifest and SHA-256. The runtime assembles only published pieces and checks their hash. Outline publication also requires matching publisher records, scope, hierarchy and source row IDs. A successful build or health response alone does not establish these dependencies.
 
 ## Environment and credentials
 
-Use the repository-root .env.example as a variable reference. Set these as **server-side Vercel environment variables** for each intended environment:
+Set these **server-side Vercel environment variables**, using `.env.example` as a reference:
 
 | Variable | Purpose |
 |---|---|
-| CORPUS_SUPABASE_URL | Pinned project origin above |
-| CORPUS_SUPABASE_SECRET_KEY | Server secret with migration/runtime access; never a browser variable |
+| `CORPUS_SUPABASE_URL` | Pinned project origin |
+| `CORPUS_SUPABASE_SECRET_KEY` | Server-only Supabase secret |
 
-The user requested public access: the site and its read-only API require no login. `CORPUS_SITE_PASSWORD` is unused and may be removed from Vercel settings. Supabase credentials remain server-side, table/RPC permissions remain restricted to the server, and the Storage bucket remains private. Public visitors can request the published records and signed downloads exposed by the application; this does not grant direct database access.
+The site and its read-only API are public and require no login. `CORPUS_SITE_PASSWORD` is unused. Table/RPC permissions remain server-only, and Storage remains private; the application exposes only published records and signed downloads. Legacy `CORPUS_BACKEND_ORIGIN` / `CORPUS_BACKEND_TOKEN` are unused.
 
-Never commit credentials, private .env files, .auth, transfer data or private receipts. Never prefix secrets with NEXT_PUBLIC_ or VITE_. Python import tools read CORPUS_SUPABASE_SECRET_KEY from their process environment or use the existing Windows user-bound DPAPI credential. They do not automatically load .env.example or .env. Configure Vercel through its environment settings; the Windows credential cannot be copied there.
-
-Legacy CORPUS_BACKEND_ORIGIN / CORPUS_BACKEND_TOKEN proxy variables are not used by the native hosted path.
+Never commit secrets, private environment files, credential stores, corpus exports or transfer receipts. Never expose secrets through `NEXT_PUBLIC_*`, `VITE_*` or frontend bundles. Local Python tools use a private process environment or the existing Windows user-bound DPAPI wrapper; they do not load `.env` automatically. Configure Vercel secrets separately.
 
 ## Safe operator resume
 
-These are instructions for a deliberate future resume. **Do not run write commands while the migration remains on hold.**
+1. Inspect current processes, driver/shared-writer locks, receipts and remote health. **Do not launch a second writer or another continuation while the one-time pipeline is active.** Preserve every export and checkpoint. Do not delete locks to force a resume.
+2. Verify existing plan, descriptor and data hashes/counts without rewriting them. **Do not run `migration_plan.py --verify` during resume:** that command generates/writes a plan and can invalidate the frozen pins. Use the reviewed read-only verifier/driver against the existing plans instead.
+3. Use one importer process at a time and one catalog/outline worker initially. Preserve the existing batch dimensions: ordinary catalogs use **200 rows / 1,500,000 raw characters**; `open_us_law` uses **1,000 rows / 4,000,000 raw characters**. The CLI option is named `--batch-bytes`, but its checkpoint boundary counts raw JSONL characters. Do not substitute smaller values: that creates different checkpoint keys and unnecessary replay. Resume every unacknowledged batch, not just those after the largest offset.
+4. Preserve the verified large-text transformation and its hash-bound per-batch journal. Successful old receipts cannot skip required transformed batches. The bounded-search migration addresses the confirmed tsvector limit without changing source/export text, batch dimensions or role timeouts. Stop and diagnose other errors; do not truncate sources or hide failed rows.
+5. After catalog records, import reviewed display groups, then law outline and ordered context manifests with their existing importers. Context order preserves deliberate overrides. Use `--workers 1` for the outline; its standalone default is higher. Keep all dataset/context/outline gates false while staging. Do not pass `--activate` to individual importers.
+6. Run the artifact phase separately in the exact reviewed manifest order. Use the shared object journal and **`--max-total-gib 34`** on every artifact invocation. The reviewed driver permits at most four artifact workers; begin with one unless measured concurrency has been approved. The ceiling is cumulative across manifests, not a fresh allowance per file. Preserve resumable upload journals; large objects use TUS, while hashes deduplicate shared bytes. Artifact routes remain `ready=false` after upload.
+7. On capacity/read-only errors, stop and check actual disk usage. Do not change billing limits or disable protection. On repeated errors, use sanitized exception type/HTTP/SQLSTATE evidence rather than looping. Retain failed checkpoints for an explicitly reviewed restart; there is no automatic retry schedule.
 
-1. Inspect active import processes, locks and the latest local/remote receipts. Confirm there is no other writer. Preserve JSONL exports, descriptors, hashes and SQLite progress journals.
-2. Recheck actual disk allocation, free space and read-only/error state. Apply and verify only the authorized 64 GB change when available. Confirm corpus/index/WAL headroom within that allocation.
-3. Review schema migrations and export validation. Run `python deploy/migration_plan.py --verify` to validate the exact export hashes/counts and write the local migration plan; this does not start imports or activate data. Run local checks below. Do not reset the database or recreate tables destructively. For very large transfers, a reviewed client-side COPY FROM STDIN path through a direct/session PostgreSQL connection is preferable; the current PostgREST scripts do not implement that transport.
-4. Resume **one catalog import process, one worker** initially. Select one reviewed JSONL and its matching descriptor; omit --activate while staging. Example:
+Individual catalog commands, with placeholders replaced by the already-reviewed local inputs, retain these settings:
 
-   ~~~powershell
-   python deploy/import_catalog.py _transfer_scratch/supabase_export/core/open_us_law.jsonl --workers 1 --batch-rows 25 --batch-bytes 256000
-   ~~~
+```text
+python deploy/import_catalog.py <ordinary-jsonl> --metadata <descriptor> --workers 1 --batch-rows 200 --batch-bytes 1500000
+python deploy/import_catalog.py <open-us-law-jsonl> --metadata <descriptor> --workers 1 --batch-rows 1000 --batch-bytes 4000000
+python deploy/import_groups.py --batch-rows 200
+python deploy/import_law_outline.py --workers 1
+python deploy/import_context.py <next-ordered-context-jsonl>
+python deploy/import_artifacts.py <next-reviewed-artifact-manifest> --workers 1 --max-total-gib 34
+```
 
-   The importer verifies source count/hash and exact remote count, and splits an atomic batch after a statement timeout. One oversized row cannot be fixed by splitting a batch: inspect and handle that record explicitly. Different batch dimensions use a different checkpoint key and replay idempotent upserts instead of reusing incompatible offsets; this can cause substantial extra writes. Preserve recorded settings when they were already reliable.
+Do not start these individually alongside the existing driver. Journals make interrupted transfers resumable; they do not replace fresh remote verification.
 
-5. After the core records are imported, run `python deploy/import_groups.py` to import the 45,638 reviewed display groups. It uses migration_plan.json's group hash/count, batches of at most 200 rows / 256 KB, and a shared single-writer lock. Preserve groups_progress.sqlite3. It verifies the exact remote count and local source hash, and does not change readiness. If no migration plan is available, an explicitly reviewed --receipt JSON must pin path, table, rows and sha256; no unpinned import is allowed. Then import context files with deploy/import_context.py so the chunking helper is used. Use deploy/import_law_outline.py --workers 1 for the dedicated outline, without --activate. Follow manifest dependencies. Keep Storage uploads, broad updates, index builds and schema reloads out of the catalog-loading phase.
-6. Run Storage separately at low concurrency with a reviewed manifest. Example:
+Applied migration versions can differ from local CLI filenames because MCP assigns remote versions. For example, the bounded-search migration is local `20260928021538` / remote `20260928021933`, and the large-text preview migration is local `20260928010951` / remote `20260928011434`; older migrations also differ. **Do not blindly run `supabase db push` or reapply by filename to this existing project.** Reconcile applied history by migration name and reviewed SQL content first. Do not rename files or rewrite history as part of an ordinary import resume. Vercel builds/deployments do not apply database DDL.
 
-   ~~~powershell
-   python deploy/import_artifacts.py _transfer_scratch/supabase_export/text_assets/large_text_assets.jsonl --workers 1
-   ~~~
+## Acceptance and two-step publication
 
-   Preserve artifact_progress.sqlite3. Hashes deduplicate objects; route aliases are registered separately. The script's byte-transfer ceiling is a local bound, not spending authorization. Keep the bucket private. An upload receipt can still require independent remote readback checks.
+First verify the exact 69-dataset catalog counts and manifest pins; all final context payloads, hashes and chunk ordering; full group membership/source-count semantics; and outline hierarchy, scope and publisher-row references. Artifact verification checks every required route and exact object key/size against a fresh private Storage inventory, plus complete-byte SHA-256 for the reviewed stratified samples. Metadata registration is not a claim that every object body was downloaded and hashed.
 
-7. On disk-full/read-only errors, stop and reassess capacity. The client raises CapacityError; do not turn this into endless retries. On repeated timeouts or schema-cache errors, investigate before raising concurrency. Do not force readiness to make pages look complete.
+Only after those proofs pass may the scoped staging step activate the exact validated artifact routes, chunks before parents, outline gates and datasets. No blanket table-wide readiness updates are allowed. The final `publication:release` gate remains closed during this step.
 
-Journals do not replace remote count/hash checks. Do not delete remote rows or checkpoints to conceal a mismatch. No scraping, scheduled collection, compute upgrade or further purchase is part of these commands.
+Next run fresh staged checks and real hosted API/browser acceptance: state/county navigation, rules/forms readers, judge portraits/details, laws/outline next/previous links, grouped/source records, dates, unavailable states and signed original/large-text downloads. Confirm public browsing, read-only methods, and no credentials/private paths in responses. **Write the exact validated `publication:release` inventory last**, after this acceptance. Import completion or `--activate` alone never constitutes release acceptance.
 
-## Acceptance before publication
+## Vercel and local checks
 
-- Required dataset counts match reviewed export descriptors and hashes; every excluded/held layer is identified.
-- Context pieces and parent manifests are complete, hash-verified and deliberately published in dependency order. Required dataset and outline readiness gates agree.
-- Original, portrait and full-text routes resolve to verified private objects. Check signed downloads, a large text file and its preferred-group alias.
-- Compare hosted lists and filters to localhost: states/counties, county resource types, laws/rules categories, judge portraits/details, source grouping, date/review filters, related records, and outline next/previous links.
-- Confirm readable text, source/as-of dates, explicit unavailable states, unauthenticated browsing, read-only API methods and no secret/private-path leakage.
-- Only then may the reviewed publication step activate datasets and their contexts. --activate does not replace artifact/context checks.
+For `fshahersw/corpussite`, use repository root, framework **Other**, install **`npm ci`**, build **`npm run build`**, output **`dist`**, and Node22 or newer. `vercel.json` pins `npm ci`; `.vercelignore` keeps Python/local corpus inputs out of Functions. Do not install Python build tools to work around a deployment using an obsolete install configuration. Configure the two server environment variables above.
 
-## Vercel release setup — held until acceptance
-
-Import **fshahersw/corpussite** with repository root, framework **Other**, install **npm ci**, build **npm run build**, output **dist**, and Node 22 or newer as required by package.json. Configure the two server variables above. The build copies UI assets; SQLite and corpus data are not bundled into Functions.
-
-The repository pins `installCommand: "npm ci"` in `vercel.json`. This overrides installation autodetection and dashboard settings. The root Python requirements are for local corpus tools; installing them on Vercel can attempt native Python builds and fail with `cmake` missing. `.vercelignore` excludes those local Python inputs from deployments. Do not install Python build tools to work around this error. Deploy the corrected commit rather than redeploying an older failed commit.
-
-Run from repository root:
-
-~~~powershell
+```text
 npm ci
 npm test
 npm run build
 python -m unittest discover -s deploy -p test_import_review.py
 python -m unittest discover -s deploy -p test_import_groups.py
-python -m unittest discover -s deploy/exporters -p test_large_text_assets.py
+python -m unittest discover -s deploy -p test_large_text_import.py
+python -m unittest discover -s deploy -p test_artifact_import.py
 node delivery/archive-directory/test_ui_release.cjs
-~~~
+```
 
-After migration gates pass, test the actual Vercel deployment without an Authorization header: Montana, a county rules/forms reader, a judge portrait, law navigation, a signed original download and a large full-text download. Local tests cannot establish live Vercel/Supabase acceptance. Until then, report migration and release as incomplete.
+The portable PostgreSQL regression fixture is `supabase/tests/corpus_search_vector.sql`. Run it with `psql --set=ON_ERROR_STOP=1 --file=supabase/tests/corpus_search_vector.sql` against an isolated migrated test database; it needs no pgTAP or application dependency and rolls back its temporary synthetic rows. It exercises real tsvector overflow, ordinary/multilingual parity, source/heap/index preservation, trigger updates and server-only grants.
 
-Platform guidance: [bulk imports](https://supabase.com/docs/guides/database/import-data), [timeouts](https://supabase.com/docs/guides/database/postgres/timeouts), and [database versus disk size](https://supabase.com/docs/guides/platform/database-size).
+Local checks do not establish live Vercel/Supabase acceptance. Until the separate publication proofs and final gate pass, report the migration and release as incomplete.

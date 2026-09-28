@@ -1122,33 +1122,35 @@
       const caret = el('i', '', '▸');
       append(open, caret, el('b', '', `Title ${entry.title}`), el('em', '', entry.name || ''));
       open.setAttribute('aria-expanded', 'false');
-      const meta = el('div', 'rg-browse-meta', `${count(entry.parts_in_slice)} of ${count(entry.parts_total)} parts · ${count(entry.sections_in_slice)} sections · ${entry.official_text_local ? 'official text local' : 'publisher text only'}`);
+      const meta = el('div', 'rg-browse-meta', `${count(entry.parts_in_slice)} of ${count(entry.parts_total)} parts · ${count(entry.sections_in_slice)} sections with saved text · ${entry.official_text_local ? 'official text local' : 'publisher text only'}`);
       append(row, open, meta);
       const slot = el('div');
+      slot.hidden = true;
       box.append(row, slot);
-      let loaded = false;
+      let loaded = false, pending = false;
       open.addEventListener('click', async () => {
         const isOpen = open.getAttribute('aria-expanded') === 'true';
         open.setAttribute('aria-expanded', isOpen ? 'false' : 'true');
         caret.textContent = isOpen ? '▸' : '▾';
-        if (isOpen) { slot.replaceChildren(); return; }
-        if (!loaded) {
-          slot.replaceChildren(el('div', 'rg-parts', 'Reading the part list…'));
-          try {
-            const data = await api(`/api/regulations/parts?title=${encodeURIComponent(entry.title)}`);
-            const grid = el('div', 'rg-parts');
-            for (const part of data.parts || []) {
-              const item = el('div', 'rg-part');
-              const anchor = routeLink(`Part ${part.part}`, 'regulations', {title: entry.title, part: `${entry.title}:${part.part}`});
-              anchor.title = `${entry.title} CFR part ${part.part} — ${text(part.heading)}`;
-              append(item, anchor, el('small', '', ' ' + text(part.heading)));
-              grid.append(item);
-            }
-            if (!(data.parts || []).length) grid.append(el('div', 'rg-part', 'No part of this title is held in full.'));
-            slot.replaceChildren(grid);
-            loaded = true;
-          } catch (error) { slot.replaceChildren(el('div', 'rg-parts', 'The part list could not be read.')); }
-        } else slot.firstChild.hidden = false;
+        slot.hidden = isOpen;
+        if (isOpen || loaded || pending) return;
+        pending = true;
+        slot.replaceChildren(el('div', 'rg-parts', 'Reading the part list…'));
+        try {
+          const data = await api(`/api/regulations/parts?title=${encodeURIComponent(entry.title)}`);
+          const grid = el('div', 'rg-parts');
+          for (const part of data.parts || []) {
+            const item = el('div', 'rg-part');
+            const anchor = routeLink(`Part ${part.part}`, 'regulations', {title: entry.title, part: `${entry.title}:${part.part}`});
+            anchor.title = `${entry.title} CFR part ${part.part} — ${text(part.heading)}`;
+            append(item, anchor, el('small', '', ' ' + text(part.heading)));
+            grid.append(item);
+          }
+          if (!(data.parts || []).length) grid.append(el('div', 'rg-part', 'No part of this title is held in full.'));
+          slot.replaceChildren(grid);
+          loaded = true;
+        } catch (error) { slot.replaceChildren(el('div', 'rg-parts', 'The part list could not be read.')); }
+        finally { pending = false; }
       });
     }
     target.append(box);
@@ -1176,7 +1178,7 @@
 
     const line = el('div', 'rg-line');
     append(line, el('strong', '', count(counts.sections_indexed)), el('span', '', `CFR sections indexed across ${count(counts.titles)} titles`),
-      el('strong', '', count(counts.sections_in_slice)), el('span', '', 'held in full (Titles 16, 21, 40 and 49)'),
+      el('strong', '', count(counts.sections_in_slice)), el('span', '', 'sections with saved text (Titles 16, 21, 40 and 49)'),
       el('strong', '', count(counts.fr_documents)), el('span', '', 'Federal Register documents linked to those parts'));
     main.append(line);
 
@@ -1191,6 +1193,12 @@
 
     const body = el('div', 'rg');
     main.append(body);
+    const searchWarning = (message, needsDateType = false) => {
+      const notice = el('p', 'rg-warn', message);
+      notice.setAttribute('role', 'alert');
+      if (needsDateType) dateType.input.setAttribute('aria-invalid', 'true');
+      body.append(notice);
+    };
 
     // A citation typed into the search box opens the section reader directly.
     const typed = CITATION.exec(get('q'));
@@ -1240,10 +1248,22 @@
     }
 
     if (SEARCH_KEYS.some(key => get(key))) {
+      // The native API throws HTTP 400 for this validation error. Keep the form
+      // visible and explain the missing basis before making that search request.
+      if ((get('dfrom') || get('dto')) && !get('date_type')) {
+        searchWarning('Choose a Date type before applying From or To dates.', true);
+        return;
+      }
       const query = new URLSearchParams(params());
       query.set('limit', '25');
       query.set('page', String(Math.max(1, Number(query.get('page')) || 1)));
       const data = await api(`/api/regulations/search?${query}`, signal); if (signal.aborted) return;
+      if (data.error) {
+        const needsDateType = /^date_type is required\b/.test(String(data.error));
+        const message = needsDateType ? 'Choose a Date type before applying From or To dates.' : text(data.error);
+        searchWarning(message, needsDateType);
+        return;
+      }
       if (!data.available) { body.append(el('p', 'rg-empty', data.reason || 'Regulation data is not available.')); return; }
       if (!(data.results || []).length) { emptyState(body, 'No matching regulations', 'Try fewer words, another title, or remove the date filter.', () => navigate('regulations')); return; }
       const table = el('table', 'rg-table');
@@ -1317,7 +1337,7 @@
       return;
     }
 
-    body.append(heading2('Browse the code', 'Titles held in full'));
+    body.append(heading2('Browse the code', 'Saved CFR titles'));
     browseStrip(body, titles.titles || []);
     const agencyRow = el('div', 'rg-actions');
     agencyRow.append(el('span', 'rg-eyebrow', 'Agencies with parts here'));

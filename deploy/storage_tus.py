@@ -152,7 +152,10 @@ class Transport:
             raise TusError('Resumable upload length or offset mismatch')
         metadata = _metadata_values(response.headers.get('Upload-Metadata', ''))
         expected = _metadata_values(_metadata(pin))
-        if any(metadata.get(k) != v for k, v in expected.items()):
+        # Supabase canonicalizes the requested seconds value on HEAD. Only these
+        # observed equivalent cache forms are allowed; identity and MIME stay exact.
+        if (any(metadata.get(k) != v for k, v in expected.items() if k != 'cacheControl')
+                or metadata.get('cacheControl') not in ('3600', 'max-age=3600')):
             raise TusError('Resumable upload target metadata mismatch')
         return offset
 

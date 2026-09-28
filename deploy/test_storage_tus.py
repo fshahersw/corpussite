@@ -1,4 +1,5 @@
 """Offline TUS protocol/security tests using a deterministic in-memory server."""
+import base64
 import hashlib
 import json
 from pathlib import Path
@@ -29,6 +30,7 @@ class Server:
         self.expire = False
         self.on_create = None
         self.fail_from_offset = None
+        self.head_metadata_overrides = {}
 
     def request(self, method, url, *, data, headers, timeout, allow_redirects):
         assert allow_redirects is False
@@ -52,8 +54,12 @@ class Server:
             if self.mode == 'wrong_metadata':
                 return Response(200, {'Upload-Offset': str(len(item['data'])), 'Upload-Length': str(item['length']),
                     'Upload-Metadata': 'bucketName ZGlmZmVyZW50'})
+            metadata = subject._metadata_values(item['metadata'])
+            metadata.update(self.head_metadata_overrides)
+            encoded = ','.join(key + ' ' + base64.b64encode(value.encode()).decode()
+                               for key, value in metadata.items())
             return Response(200, {'Upload-Offset': str(len(item['data'])), 'Upload-Length': str(item['length']),
-                                   'Upload-Metadata': item['metadata']})
+                                   'Upload-Metadata': encoded})
         assert method == 'PATCH'
         offset = int(headers['Upload-Offset'])
         self.patches.append((offset, bytes(data)))
@@ -191,6 +197,56 @@ class TusTests(unittest.TestCase):
         self.server.mode = 'wrong_metadata'
         with self.assertRaisesRegex(subject.TusError, 'target metadata mismatch'):
             self.upload()
+        self.assertEqual(self.server.patches, [])
+
+    def test_server_cache_control_canonicalization_preserves_creation_metadata(self):
+        self.server.head_metadata_overrides = {'cacheControl': 'max-age=3600'}
+        self.upload()
+        self.assert_complete()
+        requested = subject._metadata_values(list(self.server.uploads.values())[0]['metadata'])
+        self.assertEqual(requested['cacheControl'], '3600')
+
+    def test_canonical_cache_control_resumes_existing_journal_without_new_post(self):
+        self.server.fail_from_offset = 0
+        with self.assertRaisesRegex(subject.TusError, 'HTTP 401'):
+            self.upload()
+        saved = json.loads(self.journal.read_text())
+        self.server.fail_from_offset = None
+        self.server.head_metadata_overrides = {'cacheControl': 'max-age=3600'}
+        self.upload()
+        self.assert_complete()
+        self.assertEqual(sum(method == 'POST' for method, _ in self.server.calls), 1)
+        completed = json.loads(self.journal.read_text())
+        for key in ('version', 'origin', 'bucket', 'object_key', 'sha256', 'bytes', 'mime', 'location'):
+            self.assertEqual(completed[key], saved[key])
+
+    def test_other_cache_control_values_are_rejected_before_patch(self):
+        for value in ('7200', 'max-age=7200', 'max-age=3600, private', 'MAX-AGE=3600', ' 3600', 'max-age=03600', ''):
+            with self.subTest(cache_control=value):
+                self.server.head_metadata_overrides = {'cacheControl': value}
+                with self.assertRaisesRegex(subject.TusError, 'metadata'):
+                    self.upload()
+                self.assertEqual(self.server.patches, [])
+
+    def test_canonical_cache_control_does_not_relax_identity_or_mime(self):
+        for field, value in (('bucketName', 'other-bucket'), ('objectName', 'other-object'), ('contentType', 'application/pdf')):
+            with self.subTest(field=field):
+                self.server.head_metadata_overrides = {'cacheControl': 'max-age=3600', field: value}
+                with self.assertRaisesRegex(subject.TusError, 'target metadata mismatch'):
+                    self.upload()
+                self.assertEqual(self.server.patches, [])
+
+    def test_canonical_cache_control_does_not_relax_declared_length(self):
+        self.server.head_metadata_overrides = {'cacheControl': 'max-age=3600'}
+        original_request = self.server.request
+        def wrong_length(method, *args, **kwargs):
+            response = original_request(method, *args, **kwargs)
+            if method == 'HEAD':
+                response.headers['Upload-Length'] = str(len(self.raw) + 1)
+            return response
+        with patch.object(self.server, 'request', side_effect=wrong_length):
+            with self.assertRaisesRegex(subject.TusError, 'length or offset mismatch'):
+                self.upload()
         self.assertEqual(self.server.patches, [])
 
     def test_unexpected_remote_offset_does_not_skip_source_bytes(self):
