@@ -12,8 +12,9 @@ import re
 from pathlib import Path
 import sqlite3
 import threading
+import time
 from urllib.parse import quote, urlencode, urlsplit, parse_qsl
-from supabase_client import Client, StatementTimeout
+from supabase_client import Client, StatementTimeout, ORIGIN
 from context_transfer import write_context
 from import_lock import import_writer
 
@@ -26,6 +27,69 @@ PREVIEW_CHARACTERS = 1_000_000
 COUNT_ORDINAL_SPAN = 50_000
 MIN_BIGINT = -(2 ** 63)
 MAX_BIGINT = 2 ** 63 - 1
+PROJECT_REF = 'xosqzzsnhxcyehcnirpa'
+PART_SCHEMA = '''create table if not exists batch_parts (
+    project text not null, file text not null, sha text not null, outer_offset integer not null,
+    start_row integer not null, end_row integer not null, outer_records integer not null,
+    outer_payload_sha256 text not null, part_payload_sha256 text not null,
+    primary key(project,file,sha,outer_offset,start_row,end_row))'''
+
+
+def payload_hash(rows):
+    return hashlib.sha256(json.dumps(rows,ensure_ascii=False,sort_keys=True,separators=(',',':')).encode('utf8')).hexdigest()
+
+
+def batch_event(stage,outcome,offset,records,elapsed=0,depth=0):
+    # Never include record bodies, IDs, URLs, HTTP error messages or credentials.
+    print(json.dumps({'batch_stage':stage,'batch_outcome':outcome,'batch_offset':offset,
+        'batch_records':records,'batch_elapsed_ms':round(elapsed*1000,3),'split_depth':depth}),flush=True)
+
+
+class BatchParts:
+    """Independent durable child acknowledgments; existing outer checkpoints stay intact."""
+    def __init__(self,path,journal_key,source_sha,outer_offset,rows):
+        if ORIGIN!='https://'+PROJECT_REF+'.supabase.co':
+            raise ValueError('Unexpected import project; refusing checkpoint reuse')
+        self.db=sqlite3.connect(path,timeout=30)
+        self.identity=(PROJECT_REF,journal_key,source_sha,outer_offset)
+        self.rows=rows;self.outer_offset=outer_offset;self.outer_hash=payload_hash(rows)
+
+    def close(self):self.db.close()
+
+    def remaining(self):
+        saved=self.db.execute('''select start_row,end_row,outer_records,outer_payload_sha256,part_payload_sha256
+            from batch_parts where project=? and file=? and sha=? and outer_offset=? order by start_row,end_row''',self.identity).fetchall()
+        remaining=[];cursor=0
+        # Validate every saved span before allowing any request for this outer batch.
+        for start,end,total,outer_hash,part_hash in saved:
+            if not (0<=start<end<=len(self.rows)) or start<cursor:
+                raise ValueError('Invalid or overlapping durable batch checkpoint')
+            if total!=len(self.rows) or outer_hash!=self.outer_hash or part_hash!=payload_hash(self.rows[start:end]):
+                raise ValueError('Durable batch checkpoint payload differs')
+            if cursor<start:remaining.append((cursor,start))
+            cursor=end
+        if cursor<len(self.rows):remaining.append((cursor,len(self.rows)))
+        return remaining
+
+    def acknowledge(self,source_offset,rows):
+        start=source_offset-self.outer_offset;end=start+len(rows)
+        if not (0<=start<end<=len(self.rows)) or payload_hash(rows)!=payload_hash(self.rows[start:end]):
+            raise ValueError('Acknowledgment does not match its frozen batch slice')
+        self.db.execute('insert into batch_parts values(?,?,?,?,?,?,?,?,?)',
+            (*self.identity,start,end,len(self.rows),self.outer_hash,payload_hash(rows)))
+        self.db.commit()
+
+
+def send_journaled(rows,path,journal_key,source_sha,offset):
+    parts=BatchParts(path,journal_key,source_sha,offset,rows)
+    try:
+        remaining=parts.remaining()
+        skipped=len(rows)-sum(end-start for start,end in remaining)
+        if skipped:batch_event('resume','checkpointed',offset,skipped)
+        for start,end in remaining:
+            send(rows[start:end],on_commit=parts.acknowledge,source_offset=offset+start)
+        return len(rows)
+    finally:parts.close()
 
 
 def ordinal_bucket(value):
@@ -189,17 +253,30 @@ def normalize(row, large_text=None):
     return value
 
 
-def send(rows):
+def send(rows,*,on_commit=None,source_offset=0,split_depth=0):
     if not hasattr(_THREAD, 'client'):
         _THREAD.client = Client()
+    started=time.perf_counter()
     try:
         _THREAD.client.upsert('corpus_records', rows)
-    except RuntimeError as exc:
+    except StatementTimeout:
         # A transaction timeout leaves the whole upsert unapplied. Split only that
         # atomic batch, preserving outer checkpoint offsets and exact row counts.
-        if 'statement timeout' not in str(exc) or len(rows)<2:raise
+        batch_event('upsert','singleton_timeout' if len(rows)<2 else 'split',source_offset,len(rows),time.perf_counter()-started,split_depth)
+        if len(rows)<2:raise
         split=len(rows)//2
-        return send(rows[:split])+send(rows[split:])
+        return (send(rows[:split],on_commit=on_commit,source_offset=source_offset,split_depth=split_depth+1)
+                +send(rows[split:],on_commit=on_commit,source_offset=source_offset+split,split_depth=split_depth+1))
+    except Exception:
+        batch_event('upsert','failed',source_offset,len(rows),time.perf_counter()-started,split_depth)
+        raise
+    elapsed=time.perf_counter()-started
+    if on_commit is not None:
+        try:on_commit(source_offset,rows)
+        except Exception:
+            batch_event('checkpoint','failed',source_offset,len(rows),elapsed,split_depth)
+            raise
+    batch_event('upsert','saved',source_offset,len(rows),elapsed,split_depth)
     return len(rows)
 
 
@@ -213,6 +290,8 @@ def main():
     parser.add_argument('--batch-bytes', type=int, default=1_500_000)
     parser.add_argument('--activate', action='store_true')
     args = parser.parse_args()
+    if not 1 <= args.workers <= 8 or args.batch_rows < 1 or args.batch_bytes < 1:
+        parser.error('Workers must be 1..8 and batch limits must be positive')
     path = args.file.resolve()
     if not path.is_relative_to(LOCAL.resolve()):
         parser.error('Only reviewed export files in _transfer_scratch/supabase_export may be imported')
@@ -242,6 +321,8 @@ def main():
     state = sqlite3.connect(LOCAL / 'import_progress.sqlite3')
     state.execute('create table if not exists batches(file text,sha text,offset integer,records integer,primary key(file,sha,offset))')
     state.execute('create table if not exists batch_transforms(file text,sha text,offset integer,version text,manifest_sha text,primary key(file,sha,offset,version,manifest_sha))')
+    state.execute(PART_SCHEMA)
+    state.commit()
     journal_key=str(path) if (args.batch_rows,args.batch_bytes)==(200,1_500_000) else str(path)+f'#{args.batch_rows}:{args.batch_bytes}'
     done = {r[0] for r in state.execute('select offset from batches where file=? and sha=?',(journal_key,digest))}
     transformed_done={r[0] for r in state.execute('select offset from batch_transforms where file=? and sha=? and version=? and manifest_sha=?',(journal_key,digest,TRANSFORM_VERSION,large_text.manifest_sha256))}
@@ -270,11 +351,12 @@ def main():
                 rows.append(value);size+=len(line);total+=1;offloaded_records+=is_offloaded;transformed=transformed or is_offloaded
                 if len(rows)>=args.batch_rows or size>=args.batch_bytes:
                     if offset not in done or (transformed and offset not in transformed_done):
-                        pending[pool.submit(send,rows)]=(offset,transformed)
+                        pending[pool.submit(send_journaled,rows,LOCAL/'import_progress.sqlite3',journal_key,digest,offset)]=(offset,transformed)
                         if len(pending)>=args.workers*2:collect()
                     offset=total;rows=[];size=0;transformed=False
                     if total%2000==0:print(json.dumps({'dataset':dataset,'processed':total}),flush=True)
-            if rows and (offset not in done or (transformed and offset not in transformed_done)):pending[pool.submit(send,rows)]=(offset,transformed)
+            if rows and (offset not in done or (transformed and offset not in transformed_done)):
+                pending[pool.submit(send_journaled,rows,LOCAL/'import_progress.sqlite3',journal_key,digest,offset)]=(offset,transformed)
             if pending:collect(True)
     finally:
         state.close()
