@@ -50,7 +50,12 @@ function readable(value, depth = 0) {
   return Object.entries(value).filter(([,v])=>v !== null && v !== '').map(([k,v])=>`${human(k)}: ${readable(v,depth+1)}`).filter(v=>!v.endsWith(': ')).join(' · ');
 }
 function datasetName(value) { return ({open_us_law:'Open US Law',seeger:'Seeger law collection',judge_entities:'Consolidated judge profiles',judge_enrichment:'Judge source observations',judge_vendor:'Publisher analysis',provider_laws:'Provider law collection',pending_publication:'Awaiting publication',trellis_browser_counties:'County court profile snapshots'})[value] || human(value); }
+function dateValue(value) {
+  if(value&&typeof value==='object'&&!(value instanceof Date))value=value.value;
+  return typeof value==='string'||typeof value==='number'||value instanceof Date?value:null;
+}
 function date(value, withTime = false) {
+  value=dateValue(value);
   if (!value) return 'Not recorded';
   if(/^\d{4}$/.test(String(value)))return String(value);
   if(/^\d{4}-\d{2}$/.test(String(value))){const partial=new Date(`${value}-01T12:00:00Z`);return Number.isNaN(partial.getTime())?String(value):partial.toLocaleDateString('en-US',{month:'short',year:'numeric',timeZone:'UTC'});}
@@ -350,8 +355,9 @@ function documentRows(items,body) {
     else if(f&&f.doc_subtype&&human(f.doc_subtype).toLowerCase()!==String(kindText).toLowerCase())type.append(el('div','record-subline',human(f.doc_subtype)));
     const availability=el('td'),format=item.has_text?'Saved text':item.has_original?'Original file':'Link only';
     availability.append(el('span','document-format',f&&f.file_type&&f.file_type!=='none'&&item.has_original?`${format} · ${f.file_type.toUpperCase()}`:format));
-    const stamp=f&&f.dates?(f.dates.source_as_of?`Source as of ${date(f.dates.source_as_of)}`:f.dates.saved_at?`Saved ${date(f.dates.saved_at)}`:''):'';
-    if(stamp)availability.append(el('div','record-subline',stamp));
+    const sourceDate=dateValue(f?.dates?.source_as_of),savedDate=dateValue(f?.dates?.saved_at);
+    const stamp=sourceDate?`Source as of ${date(sourceDate)}`:savedDate?`Saved ${date(savedDate)}`:'';
+    if(stamp){const note=el('div','record-subline',stamp),basis=(sourceDate?f.dates.source_as_of:f.dates.saved_at)?.basis;if(typeof basis==='string')note.title=basis;availability.append(note);}
     append(row,titleCell,jurisdiction,type,availability);body.append(row);
   }
 }
