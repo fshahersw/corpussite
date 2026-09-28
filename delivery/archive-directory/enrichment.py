@@ -232,7 +232,8 @@ def asset(ident, kind='original', folder=None):
     if not data: return None
     r = next((r for r in data['resources'] if r['id'] == ident), None)
     if not r: return None
-    root = Path(r.get('_collection_folder') or folder or DATA)
+    root = Path(folder) if folder is not None else Path(r.get('_collection_folder') or DATA)
+    if folder is None and root.resolve() not in {Path(DATA).resolve(),Path(COUNTY_DATA).resolve()}: return None
     path = supplements._confined(root, r.get('text_file' if kind == 'text' else 'original_file'))
     if not path: return None
     try: body = path.read_bytes()

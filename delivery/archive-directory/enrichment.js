@@ -2,7 +2,7 @@
 (function () {
   const registry = window.ARCHIVE_AREAS = window.ARCHIVE_AREAS || {};
   const relationLabels = {in_state:'County in state',listed_filing_source:'Listed filing source',captured_as:'Saved reader',links_to:'Links to',contains:'Contains',excerpt_of:'Section from',has_native_identifier:'Native identifier',source_names_county:'Names county',order_in_mdl:'Order in MDL',cites_mdl:'Cites MDL',cites_docket:'Cites docket',lists_docket_in_schedule:'Docket printed in schedule',named_court:'Names court',county_context:'County context',serves_geography_as_source_reported:'Source reports court area',contains_layout_section:'Contains layout fragment'};
-  const shapeLabel = value => ({section:'Extracted section',body:'Document body',index:'Source index'})[value] || human(value||'unclassified');
+  const shapeLabel = value => ({section:'Extracted section',body:'Document body',rule_body:'Rule text',order_body:'Order text',index:'Source index'})[value] || human(value||'unclassified');
   const statusLabel = value => ({rescission_notices_only:'Rescission notices only',rule_text_with_rescission_notices:'Includes rescission notices',compilation_includes_active_text_and_rescinded_notices:'Compilation includes rescission notices',rule_text_currency_unverified:'Rule text — currency not verified'})[value] || '';
   function tabs() {
     const row=el('div','button-row');append(row,routeLink('Saved additions','additions',{},'button'),routeLink('Evidence connections','connections',{},'button'));return row;
@@ -79,6 +79,10 @@
     if(item.parent_compilation_id?.startsWith('addition:'))row.append(routeLink('Full source reader',`addition/${encodeURIComponent(item.parent_compilation_id)}`,{},'button-link'));
     if(item.document_shape==='section')main.append(el('p','muted-note',`This reader is an extracted section of a larger source document${item.source_page?', starting on source page '+item.source_page:''}. Open the source document to review it in context.`));
     if(statusLabel(item.legal_status))main.append(el('p','publication-note',statusLabel(item.legal_status)));
+    if(Array.isArray(item.quality_notes)&&item.quality_notes.length){
+      const notes=el('section','publication-note');notes.append(el('h2','','Reader notes'));
+      for(const note of item.quality_notes)if(typeof note==='string')notes.append(el('p','',note));main.append(notes);
+    }
     const dates=el('dl','record-meta');for(const [label,value] of [['Captured',item.captured_at],['Source as of',item.source_as_of],['Filed',item.filed_at],['Publisher date',item.published_at],['Effective date',item.effective_from]])metaRow(dates,label,value?date(value,label==='Captured'):'Not established');metaRow(dates,'Review',human(item.review_status)||'Not established');main.append(dates);
     if(item.text)main.append(prose(item.text,'reading-content'));else emptyState(main,'Text is not available','The original file is preserved above.');
     const related=el('div','');main.append(related);renderRelated(related,item.id,signal);

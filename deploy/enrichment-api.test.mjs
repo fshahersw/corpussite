@@ -106,7 +106,7 @@ test('county source path retains statewide scope without expanding every county 
   assert.equal(result.related.clusters[0].key,'listed_source');
 });
 
-function optionalCollection({held=false,missingIndex=false,missingGraph=false,collision=false}={}){
+function optionalCollection({held=false,missingIndex=false,missingGraph=false,collision=false,indexError=false,duplicateBaseEdge=false}={}){
   const resource={id:collision?'one':'county-gap:new',title:'New official county rules',state:'WI',source_url:'https://court.gov/local.pdf'};
   const extraEdge={id:'new-edge',source:resource.id,target:'county:26001',relation:'source_names_county',evidence:{quote:'Named county',source_url:resource.source_url}};
   const extra={available:true,resources:[resource],scopes:{'county:26001':[resource.id]},graph_entities:['county:26001',resource.id],summary:{original_documents:1,graph_edges:1}};
@@ -114,11 +114,12 @@ function optionalCollection({held=false,missingIndex=false,missingGraph=false,co
   return {resource,routes,calls,ctx:{dataset:async id=>id==='county_enrichment_20260928'?{ready:!held}:{ready:true},
     context:async key=>{
       calls.push(key);
-      if(key==='county-enrichment-20260928:index')return missingIndex?null:extra;
+      if(key==='county-enrichment-20260928:index'){if(indexError)throw Error('Context hash mismatch');return missingIndex?null:extra;}
       if(key==='county-enrichment-20260928:record:'+resource.id)return {...resource,text:'Saved county body'};
       if(key.startsWith('county-enrichment-20260928:graph:')){
         if(missingGraph)return null;
-        return {available:true,entity:key.slice('county-enrichment-20260928:graph:'.length),edges:[extraEdge],nodes:[{id:resource.id,resource_id:resource.id}],total:1};
+        const graphEdges=duplicateBaseEdge?[edges[0],extraEdge]:[extraEdge];
+        return {available:true,entity:key.slice('county-enrichment-20260928:graph:'.length),edges:graphEdges,nodes:[{id:resource.id,resource_id:resource.id},{id:'county:26001'}],total:graphEdges.length};
       }
       return ctx.context(key);
     },asset:async route=>{routes.push(route);return new Response('verified original');}}
@@ -139,7 +140,7 @@ test('optional collection merges exact county scopes and dispatches reader and o
 });
 
 test('held or malformed optional collection preserves base readers and honestly holds optional IDs',async()=>{
-  for(const options of [{held:true},{missingIndex:true},{collision:true}]){
+  for(const options of [{held:true},{missingIndex:true},{collision:true},{indexError:true}]){
     const fixture=optionalCollection(options);
     const listing=await handleEnrichment('/api/enrichment',{county:'26001'},fixture.ctx);
     assert.deepEqual(listing.items.map(r=>r.id),['one']);
@@ -154,4 +155,13 @@ test('missing optional graph does not discard published base evidence and report
   const graph=await handleEnrichment('/api/enrichment/graph',{entity:'county:26001',related:'1'},fixture.ctx);
   assert.equal(graph.available,true);assert.equal(graph.edges.length,1);assert.equal(graph.related.matched,1);
   assert.equal(graph.related.incomplete,true);assert.deepEqual(graph.pending_collections,['county_enrichment_20260928']);
+});
+
+test('shared graph edges and nodes are deduplicated while unrelated collection records stay separate',async()=>{
+  const fixture=optionalCollection({duplicateBaseEdge:true});
+  const graph=await handleEnrichment('/api/enrichment/graph',{entity:'county:26001'},fixture.ctx);
+  assert.equal(graph.total,2);assert.equal(graph.edges.length,2);
+  assert.equal(graph.nodes.filter(n=>n.id==='county:26001').length,1);
+  const listing=await handleEnrichment('/api/enrichment',{},fixture.ctx);
+  assert.equal(listing.total,3);assert.deepEqual(listing.summary.by_state,{MI:2,WI:1});
 });

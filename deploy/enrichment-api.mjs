@@ -65,11 +65,16 @@ const collections=[{dataset:'gap_enrichment_20260927',prefix:'enrichment:'},{dat
 async function loadCollections(ctx){
   const ready=[],pending=[],owners=new Map();
   const inputs=await Promise.all(collections.map(async definition=>{
-    const dataset=await ctx.dataset(definition.dataset);
-    if(!dataset)return {...definition};
-    if(!dataset.ready)return {...definition,pending:true};
-    const data=await ctx.context(definition.prefix+'index');
-    return {...definition,data,pending:!data?.available||!Array.isArray(data?.resources)};
+    try{
+      const dataset=await ctx.dataset(definition.dataset);
+      if(!dataset)return {...definition};
+      if(!dataset.ready)return {...definition,pending:true};
+      const data=await ctx.context(definition.prefix+'index');
+      return {...definition,data,pending:!data?.available||!Array.isArray(data?.resources)||data.resources.some(r=>!r||typeof r.id!=='string')};
+    }catch(error){
+      if(definition.dataset==='gap_enrichment_20260927')throw error;
+      return {...definition,pending:true};
+    }
   }));
   for(const collection of inputs){
     if(collection.pending){pending.push(collection.dataset);continue;}
@@ -83,16 +88,23 @@ async function loadCollections(ctx){
   const scopes={},resources=ready.flatMap(c=>c.data.resources),entities=[...new Set(ready.flatMap(c=>c.data.graph_entities||[]))];
   for(const {data} of ready)for(const [key,ids] of Object.entries(data.scopes||{}))scopes[key]=[...new Set([...(scopes[key]||[]),...ids])];
   const summary={...ready[0].data.summary,resources:resources.length,graph_nodes:entities.length,source_file_count_basis:'per_collection',graph_count_basis:'per_collection'};
-  for(const key of ['original_documents','graph_edges','with_text'])summary[key]=ready.reduce((sum,c)=>sum+(c.data.summary?.[key]||0),0);
+  for(const key of ['original_documents','graph_edges','with_text','held','held_resources','held_relationships','duplicates'])summary[key]=ready.reduce((sum,c)=>sum+(c.data.summary?.[key]||0),0);
+  for(const [field,key] of [['lane','by_lane'],['state','by_state'],['resource_type','by_type']]){
+    summary[key]={};for(const row of resources){const label=row[field]||'unspecified';summary[key][label]=(summary[key][label]||0)+1;}
+  }
+  summary.by_relation={};for(const {data} of ready)for(const [relation,count] of Object.entries(data.summary?.by_relation||{}))summary.by_relation[relation]=(summary.by_relation[relation]||0)+count;
   const data={...ready[0].data,resources,scopes,graph_entities:entities,summary,generated_at:ready.map(c=>c.data.generated_at||'').sort().at(-1)};
   return {data,ready,pending,owners};
 }
 async function mergedGraph(entity,ready,ctx){
   const candidates=ready.filter(c=>c.data.graph_entities?.includes(entity));
-  const values=await Promise.all(candidates.map(async c=>({collection:c.dataset,graph:await ctx.context(c.prefix+'graph:'+entity)})));
+  const values=await Promise.all(candidates.map(async c=>{
+    try{return {collection:c.dataset,graph:await ctx.context(c.prefix+'graph:'+entity)};}
+    catch{return {collection:c.dataset,graph:null};}
+  }));
   const edges=new Map(),nodes=new Map(),pending=[];let complete=0,unseen=0;
   for(const {collection,graph} of values){
-    if(!graph?.available||graph.entity!==entity){pending.push(collection);continue;}
+    if(!graph?.available||graph.entity!==entity||!Array.isArray(graph.edges)){pending.push(collection);continue;}
     const key=e=>e.id||JSON.stringify([e.source,e.relation,e.target,e.evidence||{}]);
     if((graph.edges||[]).some(e=>edges.has(key(e))&&JSON.stringify(edges.get(key(e)))!==JSON.stringify(e))){pending.push(collection);continue;}
     complete++;unseen+=Math.max(0,(graph.total||0)-(graph.edges?.length||0));
