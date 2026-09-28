@@ -10,11 +10,11 @@ const pairs = {
   'verdict-reports':'verdict_reports', 'cpsc-injury-data':'cpsc_injury_data', 'expert-rulings':'expert_rulings',
   'source-documents':'source_documents', 'citation-guide':'citation_reference', 'limitation-periods':'limitation_periods',
   'citation-index':'citation_index', court_reference:'court_reference', judge_portraits:'judge_portraits',
-  'court-forms-expansion':'court_forms_expansion_20260912',
+  'court-forms-expansion':'court_forms_expansion_20260912', 'mdl-3080-docket':'mdl_3080_docket_documents_20260928',
 };
 export const aliases = Object.freeze({...pairs, ...Object.fromEntries(Object.values(pairs).map(v=>[v,v]))});
 // Separately published datasets shown inside an existing area; each joins only once its own gate passes.
-const additions = {court_documents:['court_forms_expansion_20260912']};
+const additions = {court_documents:['court_forms_expansion_20260912','mdl_3080_docket_documents_20260928']};
 const extraFilters = {
   court_documents:['court'], url_directory:['court','host'], mdl_case_inventory:['judge'],
   counsel_directory:['court'], public_laws:['year'],

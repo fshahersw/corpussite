@@ -4,18 +4,18 @@ import {aliases,handleGeneric,queryOptions} from './generic-api.mjs';
 
 const data=(id,metadata={})=>({id,ready:true,metadata:{listing:{available:true,total:8,limit:25,filters:[{name:'q'},{name:'state'},{name:'court'},{name:'dfrom'},{name:'dto'}],columns:[{key:'title'}]},...metadata}});
 
-test('all 33 canonical adapters and 63 aliases are registered',()=>{
-  assert.equal(new Set(Object.values(aliases)).size,33);
-  assert.equal(Object.keys(aliases).length,63);
+test('all 34 canonical adapters and 65 aliases are registered',()=>{
+  assert.equal(new Set(Object.values(aliases)).size,34);
+  assert.equal(Object.keys(aliases).length,65);
 });
 
 const courtListing=(total,options)=>({listing:{available:true,total,limit:25,qualification:'Primary scope.',filters:[{name:'q'},{name:'doc_type',options}],columns:[{key:'document'}]}});
-function courtContext(addition) {
+function courtContext(addition,others={}) {
   const calls={};
   const context={
     dataset:async id=>id==='court_documents'
       ? {id,ready:true,expected_records:3,imported_records:3,metadata:courtListing(3,[{value:'court_form',label:'Court form',count:2},{value:'local_rule',label:'Local rule',count:1}])}
-      : addition,
+      : id==='court_forms_expansion_20260912' ? addition : others[id] ?? null,
     query:async q=>(calls.query=q,{total:7,items:[{id:'court-forms-20260912:abc'}]}),
     detail:async(...args)=>(calls.detail=args,{title:'Form',facts:[],sections:[]}),
   };
@@ -45,6 +45,15 @@ test('a published addition joins listing, merged facet counts and record details
   assert.equal(result.total,7);
   await handleGeneric('/api/area/court-documents/item',{id:'court-forms-20260912:abc'},context);
   assert.deepEqual(calls.detail,['court-forms-20260912:abc',['court_documents','court_forms_expansion_20260912'],{full:false}]);
+});
+test('each addition joins independently; a held one never appears beside a published one',async()=>{
+  const docket={id:'mdl_3080_docket_documents_20260928',ready:false,expected_records:2,imported_records:2,metadata:{listing:{filters:[]}}};
+  const {calls,context}=courtContext(addition(),{mdl_3080_docket_documents_20260928:docket});
+  await handleGeneric('/api/area/court-documents',{},context);
+  assert.deepEqual(calls.query.datasets,['court_documents','court_forms_expansion_20260912']);
+  docket.ready=true;
+  await handleGeneric('/api/area/court-documents',{},context);
+  assert.deepEqual(calls.query.datasets,['court_documents','court_forms_expansion_20260912','mdl_3080_docket_documents_20260928']);
 });
 test('addition originals use their own registered route',async()=>{
   let path;const context={asset:async p=>(path=p,new Response(null,{status:302,headers:{Location:'https://example.test/signed'}}))};
