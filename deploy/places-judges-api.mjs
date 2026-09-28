@@ -1,4 +1,5 @@
 /* Native county/judge/biography contracts over the migrated public projections. */
+import portraitMembership from './judge-portrait-membership.json' with { type: 'json' };
 const normalize = value => String(value ?? '').normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase().replaceAll('ß', 'ss');
 const number = (value, fallback, maximum) => {
   const parsed = Number.parseInt(value, 10);
@@ -10,6 +11,14 @@ const equal = (left, right) => normalize(left) === normalize(right);
 const array = value => Array.isArray(value) ? value : value == null ? [] : [value];
 const includes = (values, wanted, insensitive = false) => array(values).some(value => insensitive ? equal(value, wanted) : value === wanted);
 const canonical = (value, choices) => choices.find(choice => equal(choice, value)) ?? value;
+
+export function validatedPortraitIds(meta, membership = portraitMembership) {
+  // Older native feature flags predate the validated portrait overlay. The
+  // frozen export supplies exact judge-to-route pairs; never infer from names.
+  if (meta.export_jsonl_sha256 !== membership.source_export_sha256 || !Array.isArray(meta.validated_portrait_routes) || !Array.isArray(meta.filter_index)) return null;
+  const routes = new Set(meta.validated_portrait_routes), ids = new Set(meta.filter_index.map(row => row.id));
+  return new Set(membership.entries.filter(([id, route]) => ids.has(id) && routes.has(route)).map(([id]) => id));
+}
 
 export function judgeSearch(row, query) {
   const source = normalize(query).slice(0, 200);
@@ -31,11 +40,12 @@ export function personSearch(row, query) {
   return wanted.slice(0, 12).every(word => tokens.some(token => token.startsWith(word)));
 }
 
-function judgesMatch(row, params, { omitCourt = false } = {}) {
+function judgesMatch(row, params, { omitCourt = false, photoIds = null } = {}) {
   const filters = row.filters ?? {};
   if (!judgeSearch(row, params.q)) return false;
   for (const key of ['state', 'system', 'court', 'has', 'status', 'role', 'president']) {
     if (omitCourt && key === 'court') continue;
+    if (key === 'has' && params.has === 'photo' && photoIds !== null) { if (!photoIds.has(row.id)) return false; continue; }
     if (key === 'has' && !['details', 'photo', 'biography', 'analysis', 'reports'].includes(params.has)) continue;
     if (params[key] && !includes(filters[key], params[key], ['state', 'system', 'court'].includes(key))) return false;
   }
@@ -90,14 +100,16 @@ export async function handlePlacesJudges(path, params, context) {
         key === 'court' ? (baseline.courts ?? []).map(row => row.value) : [];
       filters[key] = choices.length ? canonical(params[key], choices) : params[key];
     }
-    if (['details', 'photo', 'biography', 'analysis', 'reports'].includes(params.has)) filters.has = params.has;
+    const photoIds = params.has === 'photo' ? validatedPortraitIds(meta) : null;
+    if (photoIds !== null) filters.__ids = [...photoIds];
+    else if (['details', 'photo', 'biography', 'analysis', 'reports'].includes(params.has)) filters.has = params.has;
     // Match the saved native substring/alias index, rather than interpreting a
     // partial judge name as a PostgreSQL whole-word full-text query.
     if (params.q) filters.id = index.filter(row => judgeSearch(row, params.q)).map(row => row.id);
     const result = await context.query({ datasets: ['judges'], filters, q: '', limit,
       offset: (page - 1) * limit, sort: params.sort === 'name' ? 'title' : 'rank' });
     const counts = new Map();
-    for (const row of index.filter(row => judgesMatch(row, params, { omitCourt: true }))) {
+    for (const row of index.filter(row => judgesMatch(row, params, { omitCourt: true, photoIds }))) {
       for (const court of new Set(row.filters?.court ?? [])) counts.set(court, (counts.get(court) ?? 0) + 1);
     }
     const courts = [...counts].sort(([a], [b]) => a.toLowerCase() < b.toLowerCase() ? -1 : a.toLowerCase() > b.toLowerCase() ? 1 : 0)

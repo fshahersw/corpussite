@@ -11,7 +11,11 @@ export async function handleCountyResources(path, params, context) {
   if (!dataset?.ready) return { available: false, total: 0, items: [], page, limit, facets: { resource_types: [], availability: [] }, county_geoid: params.geoid || null };
   const metadata = dataset.metadata ?? dataset;
   const base = metadata.listing ?? {};
-  const scoped = (metadata.filter_index ?? []).filter(row => (!params.state || lower(row.state) === lower(params.state).trim()) &&
+  // The county reader sends full state names; saved county resources retain USPS
+  // abbreviations. Resolve both only through the published jurisdiction aliases.
+  const aliases = params.state ? (await context.context?.('state:aliases')) ?? {} : {};
+  const stateKey = value => lower(aliases[lower(value).trim()] ?? value).trim();
+  const scoped = (metadata.filter_index ?? []).filter(row => (!params.state || stateKey(row.state) === stateKey(params.state)) &&
     (!params.geoid || row.county_geoids.includes(params.geoid)));
   const facets = Object.fromEntries([['resource_types', 'resource_type'], ['availability', 'availability']].map(([name, field]) => [name,
     (base.facets?.[name] ?? []).map(option => ({ ...option, count: scoped.filter(row => row[field] === option.value).length })).filter(option => option.count)]));

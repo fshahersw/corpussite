@@ -22,3 +22,21 @@ test('county category alias and venue substring use only saved index fields', as
   assert.equal(result.total, 1); assert.equal(result.items[0].id, 'b');
   assert.equal((await handleCountyResources('/api/county-litigation', { q: 'unrecorded' }, context)).total, 0);
 });
+test('county full state names and abbreviations resolve to the same published resource scope and facets', async () => {
+  const aliases = { ca: 'CA', california: 'CA', mt: 'MT', montana: 'MT' };
+  const published = { ...context, async context(key) { assert.equal(key, 'state:aliases'); return aliases; } };
+  for (const [name, abbreviation] of [[' California ', 'CA'], ['mOnTaNa', 'mt']]) {
+    const byName = await handleCountyResources('/api/county-litigation', { state: name }, published);
+    const byCode = await handleCountyResources('/api/county-litigation', { state: abbreviation }, published);
+    assert.ok(byName.total > 0);
+    assert.deepEqual(byName, byCode);
+  }
+  const unknown = await handleCountyResources('/api/county-litigation', { state: 'Unrecorded state' }, published);
+  assert.equal(unknown.total, 0);
+  assert.equal((await handleCountyResources('/api/county-litigation', { state: 'California', geoid: '30001' }, published)).total, 0, 'State alias must not bypass county scope');
+});
+test('without a published alias map, exact state abbreviations remain usable without inferring a jurisdiction', async () => {
+  const unpublished = { ...context, async context() { return null; } };
+  assert.equal((await handleCountyResources('/api/county-litigation', { state: 'CA' }, unpublished)).total, 1);
+  assert.equal((await handleCountyResources('/api/county-litigation', { state: 'California' }, unpublished)).total, 0);
+});
