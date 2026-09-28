@@ -467,7 +467,7 @@ async function renderCountyFiling(county,signal,target){
   if(!data||!data.available||!Array.isArray(data.groups)||!data.groups.length){target.remove();return;}
   target.replaceChildren();
   target.append(append(el('div','section-heading'),el('h2','','Rules, forms and filing sources'),el('small','',[data.county?.name,data.county?.state].filter(Boolean).join(', '))));
-  if(data.summary)target.append(el('p','muted-note',sentenceClip(data.summary,160)));
+  if(data.summary)target.append(el('p','muted-note',`Source-link snapshot: ${sentenceClip(data.summary,160)}. New source additions are listed separately below.`));
   for(const group of data.groups){
     const items=Array.isArray(group.items)?group.items:[];if(!items.length)continue;
     const box=el('div','filing-group');box.append(el('h3','county-section-heading',group.scope_label||'Filing sources'));
