@@ -60,7 +60,7 @@
     const fields=[];
     for(const [name,label] of [['q','Search'],['state','State'],['resource_type','Type'],['document_shape','Content'],['lane','Collection']]){
       const field=filterField(label,name,name==='q'?'search':'select',params.get(name)||'');
-      if(name!=='q')setOptions(field.input,(data.facets[name]||[]).map(v=>({value:v,label:name==='document_shape'?shapeLabel(v):human(v)})),'All');
+      if(name!=='q')setOptions(field.input,(data.facets[name]||[]).map(v=>({value:v,label:name==='document_shape'?shapeLabel(v):human(v)})),'All',params.get(name)||'');
       fields.push([name,field.input]);form.append(field.label);
     }
     const submit=el('button','button','Apply filters');submit.type='submit';form.append(submit);
