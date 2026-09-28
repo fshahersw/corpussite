@@ -34,6 +34,60 @@ test('MDL detail, summary, missing IDs and unhandled paths preserve contracts', 
   assert.equal((await handleReferencesMdl('/api/mdls/summary', {}, context())).counts.mdls_pending, 2);
   assert.equal(await handleReferencesMdl('/api/unknown', {}, context()), null);
 });
+const mdlOverlays = {
+  state_proceedings: 'state_proceedings', appearances: 'mdl_appearances',
+  docket_documents: 'mdl_docket_documents', docket_activity: 'mdl_docket_activity',
+  cases: 'mdl_case_inventory', counsel_directory: 'counsel_directory',
+  verdict_reports: 'verdict_reports', expert_rulings: 'expert_rulings'
+};
+function mdlDetailContext(detail, published = []) {
+  return { ...context(),
+    async dataset(id) { return id === 'mdls' || published.includes(id) ? { ready: true } : { ready: false }; },
+    async detail() { return detail; }
+  };
+}
+
+test('MDL detail suppresses every held overlay and duplicated reader text while retaining registry context', async () => {
+  const registry = { id: 'mdl:1', title: 'Published JPML matter', actions_pending: 20,
+    court: { id: 'nysd' }, judge_links: [{ entity_id: 'e1' }],
+    documents: [{ document_id: 'report-1' }], provenance: { publisher: 'JPML' },
+    cl_links: { docket_id: 10 }, local_collections: [{ id: 'saved-mdl-1' }],
+    reports: [{ document_id: 'report-1' }], summary: { mdl_number: 1 }, edges: [{ kind: 'reported_in' }] };
+  const detail = { ...registry, ...Object.fromEntries(Object.keys(mdlOverlays).map(key => [key, { total: 1, marker: `held-${key}` }])),
+    text: 'held-cases duplicate reader text', text_characters: 32, text_preview_characters: 32, text_truncated: true };
+  const before = structuredClone(detail);
+  const result = await handleReferencesMdl('/api/mdl', { number: '1' }, mdlDetailContext(detail));
+  for (const key of Object.keys(mdlOverlays)) assert.equal(result[key], null, key);
+  for (const [key, value] of Object.entries(registry)) assert.deepEqual(result[key], value, key);
+  assert.equal(result.text, ''); assert.equal(result.text_characters, 0);
+  assert.equal(result.text_preview_characters, 0); assert.equal(result.text_truncated, false);
+  assert.doesNotMatch(JSON.stringify(result), /held-/);
+  assert.deepEqual(detail, before, 'response filtering must not mutate the cached detail');
+});
+
+test('MDL overlays follow their owning dataset and fail closed for missing publication state', async () => {
+  for (const [block, owner] of Object.entries(mdlOverlays)) {
+    const detail = { id: 'mdl:1', [block]: { total: 1, marker: block } };
+    const ready = await handleReferencesMdl('/api/mdl', { number: '1' }, mdlDetailContext(detail, [owner]));
+    assert.deepEqual(ready[block], detail[block], block);
+    const ctx = mdlDetailContext(detail);
+    ctx.dataset = async id => id === 'mdls' || id === 'mdl_counsel' ? { ready: true } : null;
+    const missing = await handleReferencesMdl('/api/mdl', { number: '1' }, ctx);
+    assert.equal(missing[block], null, block);
+  }
+});
+
+test('MDL detail keeps published overlays beside held ones and preserves fully published responses', async () => {
+  const detail = { id: 'mdl:1', state_proceedings: { total: 1 }, cases: { total: 2 },
+    counsel_directory: { total_firms: 3 }, expert_rulings: null, text: '', text_characters: 0 };
+  const mixed = await handleReferencesMdl('/api/mdl', { number: '1' }, mdlDetailContext(detail, ['state_proceedings', 'counsel_directory']));
+  assert.deepEqual(mixed.state_proceedings, detail.state_proceedings);
+  assert.deepEqual(mixed.counsel_directory, detail.counsel_directory);
+  assert.equal(mixed.cases, null); assert.equal(mixed.expert_rulings, null);
+  const published = await handleReferencesMdl('/api/mdl', { number: '1' }, mdlDetailContext(detail, Object.values(mdlOverlays)));
+  assert.deepEqual(published, detail);
+});
+
 test('source taxonomy combines exact tags and all search terms, keeping registry order', async () => {
   const sourceRows = [
     { id: 'b', search: 'civil court form', registry_order: 2, filters: { category: 'court_forms', jurisdiction: 'ca', has: ['saved'], api_bulk: '0' } },

@@ -14,6 +14,31 @@ function mdlSort(rows, sort) {
       (b.item.actions_pending ?? 0) - (a.item.actions_pending ?? 0) || a.item.mdl_number - b.item.mdl_number);
 }
 
+// These overlays are exported into MDL details independently of their owners'
+// hosted publication state. Keep this map aligned with ReferenceExporter.mdls.
+const mdlOverlays = {
+  state_proceedings: 'state_proceedings', appearances: 'mdl_appearances',
+  docket_documents: 'mdl_docket_documents', docket_activity: 'mdl_docket_activity',
+  cases: 'mdl_case_inventory', counsel_directory: 'counsel_directory',
+  verdict_reports: 'verdict_reports', expert_rulings: 'expert_rulings'
+};
+
+async function publishedMdlDetail(detail, context) {
+  const states = await Promise.all(Object.entries(mdlOverlays)
+    .filter(([key]) => detail[key] != null)
+    .map(async ([key, dataset]) => [key, (await context.dataset(dataset))?.ready === true]));
+  const held = states.filter(([, ready]) => !ready).map(([key]) => key);
+  if (!held.length) return detail;
+  const result = { ...detail };
+  for (const key of held) result[key] = null;
+  // The registry exporter has no standalone reader body. An older imported
+  // preview may duplicate an overlay, so it cannot survive a partial response.
+  for (const [key, value] of Object.entries({ text: '', text_characters: 0, text_preview_characters: 0, text_truncated: false })) {
+    if (Object.hasOwn(result, key)) result[key] = value;
+  }
+  return result;
+}
+
 export async function handleReferencesMdl(path, params, context) {
   const source = ['/api/sources', '/api/source'].includes(path);
   const mdl = ['/api/mdls', '/api/mdl', '/api/mdls/summary', '/api/mdls/for-judge', '/api/mdls/for-person'].includes(path);
@@ -27,7 +52,9 @@ export async function handleReferencesMdl(path, params, context) {
   if (path === '/api/source') return await context.detail(params.id, ['sources'], { full: false }) ?? fail('Source reference not found');
   if (path === '/api/mdl') {
     const number = integer(params.number, null);
-    return number == null ? fail('MDL not found') : await context.detail(String(number), ['mdls'], { full: false }) ?? fail('MDL not found');
+    if (number == null) return fail('MDL not found');
+    const detail = await context.detail(String(number), ['mdls'], { full: false });
+    return detail ? publishedMdlDetail(detail, context) : fail('MDL not found');
   }
   if (path === '/api/mdls/summary') return meta.registry_summary ?? { available: false };
 

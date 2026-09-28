@@ -129,6 +129,34 @@ class TimeoutTests(unittest.TestCase):
         with patch.object(supabase_client.time,'sleep') as sleep:r=c.call('POST','/rest/v1/corpus_records')
         self.assertEqual(r.status_code,200);self.assertEqual(c.session.request.call_count,2);sleep.assert_called_once()
 
+    def test_transient_origin_handshake_failure_retries_without_changing_tls(self):
+        c=self.client_with([self.reply(525,'','SSL handshake failed'),self.reply(200,'','')])
+        payload=b'unchanged idempotent batch'
+        with patch.object(supabase_client.time,'sleep') as sleep:
+            r=c.call('POST','/rest/v1/corpus_records',data=payload)
+        self.assertEqual(r.status_code,200);self.assertEqual(c.session.request.call_count,2)
+        sleep.assert_called_once()
+        first,second=c.session.request.call_args_list
+        self.assertEqual(first,second)
+        self.assertEqual(first.kwargs['data'],payload)
+        self.assertFalse(first.kwargs['allow_redirects'])
+        self.assertNotIn('verify',first.kwargs)
+
+    def test_persistent_origin_handshake_failure_is_bounded(self):
+        c=self.client_with([self.reply(525,'','SSL handshake failed') for _ in range(7)])
+        with patch.object(supabase_client.time,'sleep') as sleep:
+            with self.assertRaisesRegex(RuntimeError,'HTTP 525'):
+                c.call('POST','/rest/v1/corpus_records')
+        self.assertEqual(c.session.request.call_count,7);self.assertEqual(sleep.call_count,6)
+
+    def test_invalid_origin_certificate_and_redirect_do_not_retry(self):
+        for status in (526,302):
+            c=self.client_with([self.reply(status,'','Request failed')])
+            with patch.object(supabase_client.time,'sleep') as sleep:
+                with self.assertRaisesRegex(RuntimeError,f'HTTP {status}'):
+                    c.call('POST','/rest/v1/corpus_records')
+            self.assertEqual(c.session.request.call_count,1);sleep.assert_not_called()
+
     def test_atomic_timeout_splits_and_single_record_failure_is_retained(self):
         class Fake:
             def __init__(self):self.calls=[]

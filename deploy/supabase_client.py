@@ -46,7 +46,9 @@ class Client:
                     error={}
                 if isinstance(error,dict) and error.get('code')=='57014' and 'statement timeout' in str(error.get('message','')).lower():
                     raise StatementTimeout(f'{method} {path.split("?")[0]}: PostgreSQL 57014: statement timeout')
-            if response.status_code not in (408, 429, 500, 502, 503, 504, 520, 521, 522, 524) or attempt == 6:
+            # 525 is a Cloudflare-to-origin handshake failure. Retry the same
+            # bounded idempotent request; keep client TLS validation enabled.
+            if response.status_code not in (408, 429, 500, 502, 503, 504, 520, 521, 522, 524, 525) or attempt == 6:
                 break
             time.sleep(min(5, 1 + attempt * 2))
         if response.status_code >= 400 or 300 <= response.status_code < 400:

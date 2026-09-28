@@ -1,4 +1,5 @@
 /* Saved navigation and source relationships; metadata dates remain source dates. */
+import {publishedSupplements} from './published-supplements.mjs';
 const num=(value,fallback,max=100)=>Math.min(max,Math.max(1,parseInt(value,10)||fallback));
 const lower=value=>String(value??'').trim().toLowerCase();
 const notFound=()=>Response.json({error:'Saved reference not found'},{status:404});
@@ -104,6 +105,6 @@ export async function handleNavigation(path,p,ctx){
   const rows=data.rows.filter(r=>(!p.q||lower(['title','description','excerpt','court_label','state','resource_kind'].map(k=>r[k]||'').join(' ')).includes(lower(p.q)))&&(!p.family||lower(r.registry_family)===lower(p.family))&&(!p.kind||lower(r.resource_kind)===lower(p.kind)));
   const result=pageRows(rows,{...p,limit:p.page_size||20},50);return {...data.card,...result,page_size:result.limit};
  }
- if(path==='/api/supplements')return p.name?publishedContext('supplement:'+p.name):publishedContext('supplements');
+ if(path==='/api/supplements')return p.name?publishedContext('supplement:'+p.name):(await context('supplements'))??(await publishedSupplements(ctx))??publicationPending();
  return null;
 }

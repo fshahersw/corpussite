@@ -15,7 +15,7 @@ test('recognized unpublished navigation contexts return 503 instead of falling t
   ];
   for (const [path, key] of routes) {
     const values = { 'doj:states': { items: [] } };
-    const ctx = { async context(name) { return values[name] ?? null; } };
+    const ctx = { async context(name) { return values[name] ?? null; }, async datasets() { return []; } };
     const request = new Request('https://archive.example' + path);
     const result = await handleCloud(request, ctx);
     assert.equal(result.status, 503, path);
