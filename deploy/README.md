@@ -79,7 +79,7 @@ python deploy/import_artifacts.py <next-reviewed-artifact-manifest> --workers 1 
 
 Do not start these individually alongside the existing driver. Journals make interrupted transfers resumable; they do not replace fresh remote verification.
 
-Applied migration versions can differ from local CLI filenames because MCP assigns remote versions. For example, the bounded-search migration is local `20260928021538` / remote `20260928021933`, and the large-text preview migration is local `20260928010951` / remote `20260928011434`; older migrations also differ. **Do not blindly run `supabase db push` or reapply by filename to this existing project.** Reconcile applied history by migration name and reviewed SQL content first. Do not rename files or rewrite history as part of an ordinary import resume. Vercel builds/deployments do not apply database DDL.
+Applied migration versions can differ from local CLI filenames because MCP assigns remote versions. For example, the bounded-search migration is local `20260928021538` / remote `20260928021933`, and the large-text preview migration is local `20260928010951` / remote `20260928011434`, the bounded listing query is local `20260928233500` / remote `20260928232743`, and the database-size function is local `20260928234500` / remote `20260928233127`; older migrations also differ. **Do not blindly run `supabase db push` or reapply by filename to this existing project.** Reconcile applied history by migration name and reviewed SQL content first. Do not rename files or rewrite history as part of an ordinary import resume. Vercel builds/deployments do not apply database DDL.
 
 ## Acceptance and two-step publication
 
