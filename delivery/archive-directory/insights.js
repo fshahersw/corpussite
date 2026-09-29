@@ -215,6 +215,33 @@
         if (jpml.current) links.append(link('Pending dockets, September 1, 2026 ↗', jpml.current.source_url, true));
         main.append(links);
       }
+      const enrichment = window.LAW_ENRICHMENT;
+      if (enrichment) {
+        const labels = { settlement: 'Settlement', daubert_expert: 'Expert and Daubert', class_cert: 'Class certification', bellwether: 'Bellwether', summary_judgment: 'Summary judgment', master_complaint: 'Master complaint', complaint: 'Complaint', case_management_order: 'Case-management order', motion_to_dismiss: 'Motion to dismiss', motion: 'Motion', remand_transfer: 'Remand and transfer', opinion_order: 'Order and opinion', transcript: 'Transcript', answer: 'Answer', other: 'Other' };
+        const amendments = enrichment.amendments;
+        const dockets = enrichment.dockets;
+        const box = el('section', 'in-card');
+        box.append(el('h2', '', 'Public laws and master-docket filings'));
+        const kpis = el('div', 'in-kpis');
+        for (const [label, value] of [['Code edits marked in statute XML', amendments.edits], ['Of those, high confidence', amendments.high], ['MDL master dockets in this index', dockets.mdls.length], ['Docket entries on those dockets', dockets.entries]]) {
+          const card = el('div', 'in-kpi');
+          card.append(el('span', '', label), el('strong', '', count(value)));
+          kpis.append(card);
+        }
+        box.append(kpis);
+        box.append(el('p', 'in-note', `${amendments.source} ${dockets.source} Individual captions that are not “In re” captions are not shown. A category is the pipeline’s label on the docket text.`));
+        main.append(box);
+        main.append(chart('How public laws change the U.S. Code', amendments.actions.map(row => [row.action, row.count]), 'Each bar is one citation the statute XML marks with that action. Adds were absent from the prior semantics file and are included here.'));
+        main.append(chart('U.S. Code titles with the most marked edits', amendments.titles.map(row => [`Title ${row.title}`, row.edits]), 'Direct edits only. A citation inside quoted text with no amending action is not in this chart.', 12));
+        main.append(chart('Master-docket entries by pipeline category', dockets.totals.filter(row => row.key !== 'other').map(row => [labels[row.key] || row.key, row.count]), `${count(dockets.totals.find(row => row.key === 'other').count)} further entries are labeled other. ${count(dockets.available)} entries had a RECAP copy recorded. These labels are not the court’s document type.`));
+        const substantive = dockets.mdls.map(row => {
+          const keys = new Set(['settlement', 'daubert_expert', 'class_cert', 'bellwether', 'summary_judgment', 'master_complaint']);
+          const total = row.categories.filter(item => keys.has(item.key)).reduce((sum, item) => sum + item.count, 0);
+          const name = row.name ? row.name.replace(/^IN RE:\s*/i, '') : `MDL ${row.mdl}`;
+          return [name.length > 42 ? name.slice(0, 40) + '…' : name, total, row.mdl];
+        }).filter(row => row[1] > 0).sort((a, b) => b[1] - a[1]).slice(0, 12);
+        main.append(chart('Settlement, expert, class, bellwether, and summary-judgment entries', substantive.map(row => [`MDL ${row[2]} ${row[0]}`, row[1]]), 'Sum of those six pipeline categories on each master docket. A routine order is not in this sum.', 12));
+      }
       const fda = window.FDA_DASHBOARD;
       if (fda) {
         const recalls = fda.recalls;
