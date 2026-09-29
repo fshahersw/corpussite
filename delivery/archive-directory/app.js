@@ -1127,6 +1127,7 @@ const HUBS=[
       {view:'statistics',label:'Court statistics',hint:'Caseload tables and per-judge reports',supplement:'federal_court_statistics_20260919'},
       {view:'citation-guide',label:'Reporters & citation forms',hint:'What a reporter or code abbreviation means',supplement:'citation_reference_flp_20260920'}]},
     {view:'counsel',label:'Counsel & firms',segments:[
+      {view:'insights',label:'Insights',hint:'Firm, MDL and year counts from the saved matter catalog'},
       {view:'counsel-directory',label:'Firms & attorneys',hint:'Firms and counsel across the saved dockets',supplement:'counsel_directory_20260919'},
       {view:'counsel',label:'MDL master-docket counsel',hint:'Counsel recorded on six MDL master dockets',supplement:'mdl_counsel_20260919'},
       {view:'mdl-appearances',label:'Appearances by docket',hint:'Appearances and party counts in the saved release',supplement:'mdl_counsel_appearances_20260919'}]}]}

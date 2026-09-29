@@ -4,7 +4,7 @@ import path from 'node:path';
 const root = process.cwd();
 const source = path.join(root, 'delivery', 'archive-directory');
 const output = path.join(root, 'dist');
-const files = ['index.html', 'app.js', 'areas.js', 'usmap.js', 'statsviz.js', 'judgeui.js', 'regsui.js', 'lawreader.js', 'enrichment.js', 'styles.css',
+const files = ['index.html', 'app.js', 'areas.js', 'usmap.js', 'statsviz.js', 'judgeui.js', 'regsui.js', 'lawreader.js', 'enrichment.js', 'insights-data.js', 'insights.js', 'styles.css',
   'assets/us-counties-albers-10m.json', 'assets/us-counties-albers-10m.SOURCE.txt'];
 for (const name of files) {
   const destination = path.join(output, name);
