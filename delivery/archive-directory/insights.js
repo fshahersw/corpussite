@@ -151,7 +151,7 @@
       const type = options(register, 'type');
       const agency = options(register, 'agency');
       const kind = options(cited, 'kind');
-      main.append(el('p', 'page-summary', 'These figures come from the hosted Federal Register and citation collections, plus official GovInfo bulk links captured 2026-08-20, and from Judicial Business 2025 as published by the Administrative Office. They are not the firm matter list.'));
+      main.append(el('p', 'page-summary', 'These figures come from the hosted Federal Register and citation collections, official GovInfo bulk links captured 2026-08-20, Judicial Business 2025, the Judicial Panel on Multidistrict Litigation’s statistical reports, and the FDA Data Dashboard as read on September 28, 2026. They are not the firm matter list.'));
       const caseload = window.OFFICIAL_CASELOAD;
       if (caseload) {
         const civil = caseload.civil;
@@ -169,6 +169,128 @@
         const liability = (caseload.nature.rows || []).find(row => /product liability/i.test(row.label));
         if (liability) main.append(chart('Personal-injury product-liability cases filed', [['2021', liability.y2021], ['2022', liability.y2022], ['2023', liability.y2023], ['2024', liability.y2024], ['2025', liability.y2025]], 'Table C-2A, nature of suit. Counts are cases filed, as published.'));
         main.append(link('Judicial Business 2025 tables ↗', caseload.source_url, true));
+      }
+      const jpml = window.JPML_STATS;
+      if (jpml) {
+        const fiscal = jpml.fiscal_2025;
+        const box = el('section', 'in-card');
+        box.append(el('h2', '', 'Multidistrict litigation, fiscal year ending September 30, 2025'));
+        const kpis = el('div', 'in-kpis');
+        for (const [label, value] of [['Actions in MDL proceedings', fiscal.actions_subjected], ['Transferred by the Panel', fiscal.transferred], ['Filed in the transferee court', fiscal.direct_filed], ['Actions still pending', fiscal.pending_actions], ['MDLs still pending', fiscal.pending_mdls]]) {
+          const card = el('div', 'in-kpi');
+          card.append(el('span', '', label), el('strong', '', count(value)));
+          kpis.append(card);
+        }
+        box.append(kpis);
+        box.append(el('p', 'in-note', `JPML fiscal year statistical analysis. ${count(fiscal.actions_subjected)} civil actions were in coordinated proceedings: ${count(fiscal.transferred)} transferred from ${count(fiscal.transferor_districts)} districts into ${count(fiscal.transferee_districts)} transferee districts, and ${count(fiscal.direct_filed)} filed directly in a transferee district. The Panel received ${count(fiscal.motions_filed)} motions to centralize, granted ${count(fiscal.motions_granted)}, and denied ${count(fiscal.motions_denied)}, leaving ${count(fiscal.cases_not_transferred)} cases untransferred. Since 1968 the Panel has centralized ${count(fiscal.centralized_since_1968)} actions, remanded ${count(fiscal.remanded_since_1968)}, and transferee courts have terminated ${count(fiscal.terminated_in_transferee_courts)}. Pending counts are actions and dockets as of September 30, 2025. A calendar-year count below covers January through December and is not the same period.`));
+        main.append(box);
+        main.append(chart('New MDLs created in fiscal year 2025', fiscal.new_dockets.map(row => [row.type, row.mdls]), `${count(fiscal.motions_granted)} motions granted. The data-breach category is new in this fiscal year; those dockets were previously counted as miscellaneous.`));
+        main.append(chart('Pending MDLs by type, December 31, 2025', jpml.pending_by_type.map(row => [`${row.type} (${row.share})`, row.mdls]), `${count(jpml.pending_by_type.reduce((sum, row) => sum + row.mdls, 0))} pending MDLs in the calendar-year report. Shares are the Panel’s printed shares. This is a docket count, not a count of member actions.`));
+        const recent = jpml.series.slice(0, 15).slice().reverse();
+        main.append(chart('Motions to centralize, calendar years 2011–2025', recent.map(row => [String(row.year), row.motions_filed]), 'Calendar Year Statistics, January through December. A fiscal-year motion count covers October through September and will not match the bar for the same numbered year.'));
+        main.append(chart('Tag-along actions, calendar years 2011–2025', recent.map(row => [String(row.year), row.tag_alongs]), 'Tag-along actions in the calendar-year table. This is not the count of cases the Panel transferred.'));
+        main.append(chart('Actions in motions the Panel granted, calendar years 2011–2025', recent.map(row => [String(row.year), row.actions_granted]), 'Civil actions covered by motions granted that calendar year.'));
+        const current = jpml.current;
+        if (current) {
+          const now = el('section', 'in-card');
+          now.append(el('h2', '', 'Open MDLs as of September 1, 2026'));
+          const nowKpis = el('div', 'in-kpis');
+          for (const [label, value] of [['Open MDLs', current.mdls], ['Actions still pending', current.actions_pending], ['Actions ever in those dockets', current.actions_historical], ['Transferee districts', current.transferee_districts], ['Transferee judges', current.transferee_judges]]) {
+            const card = el('div', 'in-kpi');
+            card.append(el('span', '', label), el('strong', '', count(value)));
+            nowKpis.append(card);
+          }
+          now.append(nowKpis);
+          now.append(el('p', 'in-note', 'JPML pending-docket report, limited to active transferred litigations. “Actions still pending” counts cases open on the report date. “Actions ever in those dockets” counts every action that has been in a docket that is still open, including ones already terminated. A docket can show a handful of pending cases and tens or hundreds of thousands of historical actions. This report is not the fiscal-year statistical analysis, so its pending total is not a revision of the September 30, 2025 figure.'));
+          main.append(now);
+          main.append(chart('Open MDLs by type, September 1, 2026', current.by_type.map(row => [row.type, row.mdls]), `${count(current.mdls)} open MDLs. This is a docket count. The December 31, 2025 type chart above is an earlier report and uses the Panel’s categories as of that date.`));
+          main.append(chart('Where the pending actions sit', current.pending_buckets.map(row => [`${row.label} (${row.action_share} of actions)`, row.actions]), current.pending_buckets.map(row => `${row.docket_share} of dockets have ${row.label.toLowerCase()} (${count(row.dockets)} MDLs).`).join(' ') + ' Shares are the Panel’s printed shares.'));
+          main.append(chart('Largest open MDLs by actions still pending', current.largest_pending.map(row => [`MDL ${row.mdl} ${row.name}`, row.pending]), 'Actions pending on September 1, 2026. The twelve largest open dockets.', 12));
+          main.append(chart('Open dockets with the largest historical caseloads', current.mostly_resolved.map(row => [`MDL ${row.mdl} ${row.name} (${count(row.pending)} still pending)`, row.historical]), 'Historical actions in dockets that are still open. The pending count is in the label. 3M earplug is still on the open list with 2 actions pending and 391,225 historical actions.'));
+        }
+        const links = el('div', 'button-row');
+        links.append(link('JPML statistics index ↗', jpml.index_url, true));
+        links.append(link('Fiscal year 2025 analysis ↗', fiscal.source_url, true));
+        links.append(link('Calendar year 2025 table ↗', jpml.source_url, true));
+        if (jpml.current) links.append(link('Pending dockets, September 1, 2026 ↗', jpml.current.source_url, true));
+        main.append(links);
+      }
+      const fda = window.FDA_DASHBOARD;
+      if (fda) {
+        const recalls = fda.recalls;
+        const inspections = fda.inspections;
+        const compliance = fda.compliance;
+        const third = fda.third_party;
+        const productTotal = recalls.products_by_year.reduce((sum, row) => sum + row.products, 0);
+        const eventTotal = recalls.events_by_year.reduce((sum, row) => sum + row.events, 0);
+        const classOne = recalls.products_by_class.find(row => row.label === 'Class I').count;
+        const box = el('section', 'in-card');
+        box.append(el('h2', '', 'FDA classified recalls, fiscal years 2012–2026'));
+        const kpis = el('div', 'in-kpis');
+        for (const [label, value] of [['Recalled products', productTotal], ['Recall events', eventTotal], ['Class I products', classOne], ['Class I events', recalls.class_i_events_by_year.reduce((sum, row) => sum + row.events, 0)]]) {
+          const card = el('div', 'in-kpi');
+          card.append(el('span', '', label), el('strong', '', count(value)));
+          kpis.append(card);
+        }
+        box.append(kpis);
+        box.append(el('p', 'in-note', 'FDA recalls dashboard. Only recalls classified on or after June 8, 2012. An event is one firm’s recall of one or more products, so the product count is not the event count. Food recalls initiated on or after May 15, 2025 are under the Human Foods Program; the dashboard still labels that type Food/Cosmetics. Fiscal year 2026 was still open when these figures were read on September 28, 2026. The dashboard is updated weekly.'));
+        main.append(box);
+        main.append(chart('Recalled products by fiscal year', recalls.products_by_year.map(row => [String(row.year), row.products]), `${count(productTotal)} classified recalled products.`, 16));
+        main.append(chart('Recall events by fiscal year', recalls.events_by_year.map(row => [String(row.year), row.events]), `${count(eventTotal)} classified recall events.`, 16));
+        main.append(chart('Recalled products by type', recalls.products_by_type.map(row => [row.label, row.count]), 'Product rows, not events.'));
+        main.append(chart('Recall events by status', recalls.events_by_status.map(row => [row.label, row.count]), 'Terminated, ongoing, and completed are the dashboard’s status values for events.'));
+        main.append(chart('Class I recalled products by fiscal year', recalls.class_i_products_by_year.map(row => [String(row.year), row.products]), `Class I is the dashboard’s highest classification: ${count(classOne)} products, against ${count(recalls.products_by_class.find(row => row.label === 'Class II').count)} Class II and ${count(recalls.products_by_class.find(row => row.label === 'Class III').count)} Class III.`, 16));
+        const letterTotal = compliance.warning_letters_by_year.reduce((sum, row) => sum + row.letters, 0);
+        const action = el('section', 'in-card');
+        action.append(el('h2', '', 'FDA warning letters, seizures, and injunctions'));
+        const actionKpis = el('div', 'in-kpis');
+        for (const [label, value] of [['Warning-letter rows, 2009–2026', letterTotal], ['Injunction rows', compliance.injunctions_by_type.reduce((sum, row) => sum + row.count, 0)], ['Seizure rows', compliance.seizures_by_type.reduce((sum, row) => sum + row.count, 0)], ['Rows in the details table', compliance.table_rows]]) {
+          const card = el('div', 'in-kpi');
+          card.append(el('span', '', label), el('strong', '', count(value)));
+          actionKpis.append(card);
+        }
+        action.append(actionKpis);
+        action.append(el('p', 'in-note', 'Final actions only. The dashboard counts establishments linked to an action, not the number of actions. A case tied to more than one product type is counted once for each type, so the type chart can exceed the yearly warning-letter total. The details table has more rows than the warning-letter, injunction, and seizure charts combined. Import alerts, the usual action for a foreign firm, are not in these charts.'));
+        main.append(action);
+        main.append(chart('Warning-letter rows by fiscal year', compliance.warning_letters_by_year.map(row => [String(row.year), row.letters]), 'Fiscal years 2009 through 2026. Tobacco accounts for most of the rows in the type chart.', 18));
+        main.append(chart('Warning-letter rows by product type', compliance.warning_letters_by_type.map(row => [row.label, row.count]), 'One case can be counted under more than one product type.'));
+        main.append(chart('Injunction rows by product type', compliance.injunctions_by_type.map(row => [row.label, row.count]), `Seizure rows, shown here as a total rather than a second chart: ${compliance.seizures_by_type.map(row => `${row.label} ${count(row.count)}`).join(', ')}.`));
+        const fy2025 = inspections.by_year.find(row => row.year === 2025);
+        const fy2026 = inspections.by_year.find(row => row.year === 2026);
+        const inspect = el('section', 'in-card');
+        inspect.append(el('h2', '', 'FDA inspections'));
+        const inspectKpis = el('div', 'in-kpis');
+        for (const [label, value] of [['Domestic inspections, FY 2025', fy2025.domestic], ['Foreign inspections, FY 2025', fy2025.foreign], ['Official action indicated, FY 2025', fy2025.oai], ['Domestic inspections, FY 2026 to date', fy2026.domestic]]) {
+          const card = el('div', 'in-kpi');
+          card.append(el('span', '', label), el('strong', '', count(value)));
+          inspectKpis.append(card);
+        }
+        inspect.append(inspectKpis);
+        inspect.append(el('p', 'in-note', 'The domestic and foreign series count inspections. NAI, VAI, and OAI count final classifications of each project area inside an inspection, so those three can add up to more than the inspection count. State-contract inspections, pre-approval inspections, mammography inspections, and inspections still waiting on a final action are not in this dashboard. Fiscal year 2026 was still open on September 28, 2026.'));
+        main.append(inspect);
+        main.append(chart('Domestic FDA inspections by fiscal year', inspections.by_year.map(row => [String(row.year), row.domestic]), 'Inspection count, not a classification count.', 18));
+        main.append(chart('Foreign FDA inspections by fiscal year', inspections.by_year.map(row => [String(row.year), row.foreign]), 'Inspection count. Foreign inspections fell to 291 in fiscal year 2021.', 18));
+        main.append(chart('Official action indicated, by fiscal year', inspections.by_year.map(row => [String(row.year), row.oai]), 'Project-area classifications, not inspections. OAI is the classification that can lead to an enforcement action.', 18));
+        main.append(chart('Inspection classifications by product type', inspections.by_type.map(row => [row.label, row.nai + row.vai + row.oai]), 'NAI, VAI, and OAI added together. This is a classification count. Food and cosmetics include the Human Foods Program’s predecessor records under the dashboard’s label.'));
+        const program = el('section', 'in-card');
+        program.append(el('h2', '', 'Accredited third-party certification bodies'));
+        const programKpis = el('div', 'in-kpis');
+        for (const [label, value] of [['Recognized accreditation bodies', third.accreditation_bodies], ['Accredited certification bodies', third.certification_bodies], ['Scope accreditations', third.scope_rows]]) {
+          const card = el('div', 'in-kpi');
+          card.append(el('span', '', label), el('strong', '', count(value)));
+          programKpis.append(card);
+        }
+        program.append(programKpis);
+        program.append(el('p', 'in-note', `Recognized accreditation bodies: ${third.bodies.join('; ')}. A certification body can hold more than one scope, so scope accreditations exceed the number of bodies. Jamaica’s accreditation body is recognized and has no certification body listed under it.`));
+        main.append(program);
+        main.append(chart('Certification scopes', third.scopes.map(row => [row.label, row.count]), 'Rows in the certification-body table, one per body and scope.'));
+        const fdaLinks = el('div', 'button-row');
+        fdaLinks.append(link('FDA recalls dashboard ↗', recalls.source_url, true));
+        fdaLinks.append(link('FDA compliance actions ↗', compliance.source_url, true));
+        fdaLinks.append(link('FDA inspections ↗', inspections.source_url, true));
+        fdaLinks.append(link('Third-party certification bodies ↗', third.source_url, true));
+        fdaLinks.append(link('Firm and supplier search ↗', fda.firm_search_url, true));
+        main.append(fdaLinks);
       }
       if (year) main.append(chart('Federal Register documents by year', year.options.map(row => [row.label, row.count]).slice().reverse(), `${count(register.total)} documents, 1994 through mid-2026. Bar length is relative to the longest year.`, 40));
       if (type) main.append(chart('Federal Register by document type', type.options.map(row => [row.label, row.count]), 'Each document has one type in the publisher index.'));
