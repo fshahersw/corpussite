@@ -151,7 +151,25 @@
       const type = options(register, 'type');
       const agency = options(register, 'agency');
       const kind = options(cited, 'kind');
-      main.append(el('p', 'page-summary', 'These figures come from the hosted Federal Register and citation collections, plus official GovInfo bulk links captured 2026-08-20. They are not the firm matter list.'));
+      main.append(el('p', 'page-summary', 'These figures come from the hosted Federal Register and citation collections, plus official GovInfo bulk links captured 2026-08-20, and from Judicial Business 2025 as published by the Administrative Office. They are not the firm matter list.'));
+      const caseload = window.OFFICIAL_CASELOAD;
+      if (caseload) {
+        const civil = caseload.civil;
+        const box = el('section', 'in-card');
+        box.append(el('h2', '', 'U.S. district courts, year ending September 30, 2025'));
+        const kpis = el('div', 'in-kpis');
+        for (const [label, value] of [['Civil cases filed', civil.filed_2025], ['Civil cases terminated', civil.terminated_2025], ['Civil cases pending', civil.pending_2025], ['Median months to disposition', caseload.median_months.months]]) {
+          const card = el('div', 'in-kpi');
+          card.append(el('span', '', label), el('strong', '', count(value)));
+          kpis.append(card);
+        }
+        box.append(kpis);
+        box.append(el('p', 'in-note', `Table C. Filed rose from ${count(civil.filed_2024)} to ${count(civil.filed_2025)}. Pending fell from ${count(civil.pending_2024)} to ${count(civil.pending_2025)}. Table C-5 median is ${caseload.median_months.months} months across ${count(caseload.median_months.cases)} terminated cases. Table C-11 product-liability filings were ${count(caseload.product_liability.filed_2025)} in 2025 and ${count(caseload.product_liability.filed_2024)} in 2024. That table is not the same count as the personal-injury product-liability nature of suit below.`));
+        main.append(box);
+        const liability = (caseload.nature.rows || []).find(row => /product liability/i.test(row.label));
+        if (liability) main.append(chart('Personal-injury product-liability cases filed', [['2021', liability.y2021], ['2022', liability.y2022], ['2023', liability.y2023], ['2024', liability.y2024], ['2025', liability.y2025]], 'Table C-2A, nature of suit. Counts are cases filed, as published.'));
+        main.append(link('Judicial Business 2025 tables ↗', caseload.source_url, true));
+      }
       if (year) main.append(chart('Federal Register documents by year', year.options.map(row => [row.label, row.count]).slice().reverse(), `${count(register.total)} documents, 1994 through mid-2026. Bar length is relative to the longest year.`, 40));
       if (type) main.append(chart('Federal Register by document type', type.options.map(row => [row.label, row.count]), 'Each document has one type in the publisher index.'));
       if (agency) main.append(chart('Federal Register by agency', agency.options.slice(0, 12).map(row => [row.label, row.count]), 'Top 12 agencies by document count. A document can name more than one agency, so these counts overlap.'));
