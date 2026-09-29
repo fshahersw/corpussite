@@ -2,7 +2,8 @@
 
    Three controls and four views. Every number is a count of rows in that catalog.
    Bar length is relative to the longest bar on that chart. No rate or share is computed.
-   Matter firms and counsel firms stay as written. */
+   Firm names that differ only by punctuation, capitalization, an ampersand, or a firm suffix are counted once.
+   Attorney initials are ignored. Repeat docket files of one case are collapsed. */
 (function () {
   'use strict';
   const STYLE_ID = 'insights-style';
@@ -129,7 +130,7 @@
     main.append(kpis);
 
     const switcher = el('div', 'in-switch');
-    for (const [id, label] of [['matters', 'Matters'], ['firms', 'Firms'], ['parties', 'Parties'], ['citations', 'Citations']]) {
+    for (const [id, label] of [['matters', 'Matters'], ['universe', 'Docket universe'], ['firms', 'Firms'], ['parties', 'Parties'], ['citations', 'Citations']]) {
       const button = el('button', focus === id ? 'button button-primary' : 'button', label);
       button.type = 'button';
       button.addEventListener('click', () => navigate('insights', { year, mdl, firm, focus: id }));
@@ -143,12 +144,38 @@
       const byMdl = tally(matters.map(row => !row.mdl ? 'No MDL link' : String(row.mdl).startsWith('master:') ? 'Master docket, no MDL number' : `MDL ${row.mdl}`));
       main.append(el('p', 'page-summary', `${count(matters.length)} matters in this selection. ${largest(byYear, 'filings')}`));
       main.append(chart('Filings by year', byYear, 'Top 12 years by count in this selection. Bar length is relative to the longest bar, not a share of all cases.'));
+      main.append(chart('Matters by state', tally(matters.map(row => row.state || 'No state')), 'State is taken from the court id. Circuit courts are not given a state.'));
+      main.append(chart('Matters by status', tally(matters.map(row => row.status || 'Not recorded')), 'Status is the value stored on the case row.'));
       main.append(chart('Matters by MDL', byMdl, 'Top 12 MDLs by count in this selection. A matter with no master-docket link stays in its own row.'));
+    } else if (focus === 'universe') {
+      const masters = data.masters || [];
+      const entries = masters.reduce((sum, row) => sum + row.entries, 0);
+      const copies = masters.reduce((sum, row) => sum + (row.copies - 1), 0);
+      main.append(el('p', 'page-summary', `${count(masters.length)} scoped dockets after collapsing ${count(copies)} repeat files. ${count(entries)} docket-sheet rows in the larger copy of each. These are not member-case counts. Year and firm do not filter this list.`));
+      main.append(chart('Dockets by type', tally(masters.map(row => row.kind || 'Other')), 'Type comes from the docket number in the file name.'));
+      main.append(chart('Dockets by state', tally(masters.map(row => row.state || 'No state on the MDL crosswalk')), 'State is the court on the MDL crosswalk. Civil and miscellaneous files with no MDL number stay under no state.'));
+      main.append(chart('Docket-sheet rows by docket', masters.slice(0, 12).map(row => [`${row.kind} ${row.number || row.year}`, row.entries]), 'The 12 dockets with the most saved rows. Repeat files are not added together.'));
     } else if (focus === 'firms') {
       main.append(el('p', 'page-summary', `${largest(firmPairs, 'matters')} A matter that names two firms is counted once for each.`));
       main.append(chart('Matters by firm', firmPairs, 'Firm names are the strings on the matter record. Spellings are not merged.'));
       const counselPairs = tally(counsel.map(row => row.firm));
       main.append(chart('Counsel appearances by firm', counselPairs, !mdl ? 'Attorneys on all 59 party-list dockets, counted once per party. Choose an MDL to limit this chart. Year and the matter-firm control do not apply here.' : mdl === 'none' ? 'Attorneys on party lists that have no MDL link, counted once per party.' : 'Attorneys on the party lists for this MDL, counted once per party. Year and the matter-firm control do not rename these firms.'));
+      const aliases = (data.firm_aliases || []).slice(0, 12);
+      if (aliases.length) {
+        const list = el('ul', 'in-list');
+        for (const alias of aliases) list.append(el('li', '', `${alias.name} — also recorded as ${alias.also.join(', ')}`));
+        const box = el('section', 'in-card');
+        box.append(el('h2', '', 'Firm spellings counted together'), list, el('p', 'in-note', 'Only capitalization, punctuation, an ampersand, and a firm suffix are ignored. Other similar names stay separate.'));
+        main.append(box);
+      }
+      const people = (data.attorney_aliases || []).slice(0, 12);
+      if (people.length) {
+        const list = el('ul', 'in-list');
+        for (const person of people) list.append(el('li', '', `${person.name} — also recorded as ${person.also.join(', ')}`));
+        const box = el('section', 'in-card');
+        box.append(el('h2', '', 'Attorney spellings counted together'), list, el('p', 'in-note', 'Initials and punctuation are ignored. Different surnames stay separate.'));
+        main.append(box);
+      }
     } else if (focus === 'parties') {
       const roles = tally(parties.map(row => row.role));
       main.append(el('p', 'page-summary', `${count(parties.length)} parties ${mdl ? 'on the selected MDL' : 'on the 59 dockets that have a party list'}. ${largest(roles, 'parties')}${year || firm ? ' Year and the matter-firm control do not filter party rows.' : ''}`));
