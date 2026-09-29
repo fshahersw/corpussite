@@ -50,7 +50,7 @@
     select.append(node);
   }
 
-  function chart(title, pairs, note) {
+  function chart(title, pairs, note, limit) {
     const box = el('section', 'in-card');
     box.append(el('h2', '', title));
     if (!pairs.length) {
@@ -58,7 +58,7 @@
       return box;
     }
     const max = Math.max(...pairs.map(pair => pair[1]));
-    for (const [label, value] of pairs.slice(0, 12)) {
+    for (const [label, value] of pairs.slice(0, limit || 12)) {
       const row = el('div', 'in-row');
       const track = el('span', 'in-track');
       const fill = el('span', 'in-fill');
@@ -71,7 +71,7 @@
     return box;
   }
 
-  function render() {
+  async function render(signal) {
     installStyle();
     const data = window.CATALOG_INSIGHTS;
     if (!data) { emptyState(main, 'Insights are not loaded', 'Reload this page.', () => navigate('insights')); return; }
@@ -127,10 +127,10 @@
       card.append(el('span', '', label), el('strong', '', count(value)));
       kpis.append(card);
     }
-    main.append(kpis);
+    if (focus !== 'public') main.append(kpis);
 
     const switcher = el('div', 'in-switch');
-    for (const [id, label] of [['matters', 'Matters'], ['universe', 'Docket universe'], ['firms', 'Firms'], ['parties', 'Parties'], ['citations', 'Citations']]) {
+    for (const [id, label] of [['matters', 'Matters'], ['public', 'Public record'], ['universe', 'Docket universe'], ['firms', 'Firms'], ['parties', 'Parties'], ['citations', 'Citations']]) {
       const button = el('button', focus === id ? 'button button-primary' : 'button', label);
       button.type = 'button';
       button.addEventListener('click', () => navigate('insights', { year, mdl, firm, focus: id }));
@@ -139,6 +139,29 @@
     main.append(switcher);
 
     const largest = (pairs, noun) => pairs.length ? `${pairs[0][0] || 'Not recorded'} has the most ${noun} in this selection: ${count(pairs[0][1])}.` : 'This selection is empty.';
+    if (focus === 'public') {
+      const maps = data.maps || {};
+      const mapped = rows => (rows || []).map(row => [row.label, row.count]);
+      let register = null;
+      let cited = null;
+      try { register = await api('/api/area/federal-register?limit=1', signal); } catch (error) { if (error.name === 'AbortError') return; }
+      try { cited = await api('/api/area/citation-index?limit=1', signal); } catch (error) { if (error.name === 'AbortError') return; }
+      const options = (payload, name) => ((payload && payload.filters) || []).find(filter => filter.name === name);
+      const year = options(register, 'year');
+      const type = options(register, 'type');
+      const agency = options(register, 'agency');
+      const kind = options(cited, 'kind');
+      main.append(el('p', 'page-summary', 'These figures come from the hosted Federal Register and citation collections, plus official GovInfo bulk links captured 2026-08-20. They are not the firm matter list.'));
+      if (year) main.append(chart('Federal Register documents by year', year.options.map(row => [row.label, row.count]).slice().reverse(), `${count(register.total)} documents, 1994 through mid-2026. Bar length is relative to the longest year.`, 40));
+      if (type) main.append(chart('Federal Register by document type', type.options.map(row => [row.label, row.count]), 'Each document has one type in the publisher index.'));
+      if (agency) main.append(chart('Federal Register by agency', agency.options.slice(0, 12).map(row => [row.label, row.count]), 'Top 12 agencies by document count. A document can name more than one agency, so these counts overlap.'));
+      if (kind) main.append(chart('Authorities cited in saved documents', kind.options.map(row => [row.label, row.count]), `${count(cited.total)} citations extracted from saved documents.`));
+      main.append(chart('U.S. Code titles cited as CFR authority', mapped(maps.cfr_authority_by_usc_title), `${count(maps.cfr_authority_edges)} U.S. Code citations printed in 2025 CFR authority notes.`));
+      main.append(chart('CFR titles with a Federal Register source note', mapped(maps.cfr_fr_by_title), `${count(maps.cfr_fr_edges)} section source notes cite a Federal Register page. One section can have several.`));
+      main.append(chart('U.S. Reports decisions by decade', mapped(maps.us_reports_by_decade), `${count(maps.us_reports)} Supreme Court decisions identified in the GovInfo U.S. Reports collection.`, 30));
+      main.append(dataNote(data.qualification));
+      return;
+    }
     if (focus === 'matters') {
       const byYear = tally(matters.map(row => row.year || 'No filing date'));
       const byMdl = tally(matters.map(row => !row.mdl ? 'No MDL link' : String(row.mdl).startsWith('master:') ? 'Master docket, no MDL number' : `MDL ${row.mdl}`));
