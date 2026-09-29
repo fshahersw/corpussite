@@ -30,6 +30,7 @@ const dependencies = {
   source_directory_documents_20260919:['source_documents'],
   citation_reference_flp_20260920:['citation_reference'],
   citation_index_20260920:['citation_index'],
+  agency_safety_20260919:['agency_safety_openfda_drug_enforcement','agency_safety_openfda_device_enforcement','agency_safety_openfda_food_enforcement','agency_safety_openfda_drugsfda','agency_safety_openfda_device_pma','agency_safety_openfda_device_classification','agency_safety_openfda_crl','agency_safety_openfda_drug_shortages','agency_safety_openfda_orangebook','agency_safety_fda_warning_letters','agency_safety_fda_press_recalls','agency_safety_cpsc_recalls_local'],
   sd_statutes_20260919:['sd_statutes'],
   saved_web_pages_20260919:['saved_pages'],
   indiana_code_2026_20260919:['indiana_code'],
