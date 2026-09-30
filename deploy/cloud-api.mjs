@@ -1,3 +1,4 @@
+import { handleWorkspace } from './workspace-api.mjs';
 import { createContext } from './cloud-context.mjs';
 import { handleGeneric } from './generic-api.mjs';
 import { handlePlacesJudges } from './places-judges-api.mjs';
@@ -26,7 +27,7 @@ export async function handleCloud(request, context=createContext()) {
       datasets:datasets.map(d=>({id:d.id,ready:d.ready,records:d.imported_records}))};
   }
   if (path==='/api/county-litigation-asset') return context.asset(path+url.search);
-  for (const handler of [handleEnrichment,handleCountyResources,handleDocuments,handlePlacesJudges,handleReferencesMdl,handleNavigation,handleLawOutline,handleFederal,handleRelated,handleGeneric]) {
+  for (const handler of [handleWorkspace,handleEnrichment,handleCountyResources,handleDocuments,handlePlacesJudges,handleReferencesMdl,handleNavigation,handleLawOutline,handleFederal,handleRelated,handleGeneric]) {
     const value=await handler(path,p,context);
     if(value!==null)return value;
   }
