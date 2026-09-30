@@ -1,3 +1,4 @@
+import {composeJudge} from './research-compose.mjs';
 /* Native county/judge/biography contracts over the migrated public projections. */
 import portraitMembership from './judge-portrait-membership.json' with { type: 'json' };
 const normalize = value => String(value ?? '').normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase().replaceAll('ß', 'ss');
@@ -69,7 +70,8 @@ export async function handlePlacesJudges(path, params, context) {
 
   if (path === '/api/judge') {
     const key = meta.id_aliases?.[params.id] ?? params.id;
-    return await context.detail(key, ['judges'], { full: false }) ?? error('Judge profile not found');
+    const profile=await context.detail(key, ['judges'], {full:false});
+    return profile ? (profile.entity_id ? await composeJudge(profile,context) : profile) : error('Judge profile not found');
   }
   if (path === '/api/person') {
     if (!/^[1-9][0-9]{0,11}$/.test(params.id ?? '')) return error('Biographical record not found');

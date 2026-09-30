@@ -217,7 +217,7 @@ class Exporter:
                 detail = module.profile(item['id'])
                 if not detail:
                     raise ValueError('Native judge profile is unavailable: ' + item['id'])
-                detail['mdls'] = server.mdl_registry.for_judge(item['id'])
+                detail['mdls'] = server.mdl_registry.for_judge(entity)
                 detail['structured'] = server.judge_overlay(entity)
                 detail['evidence'] = server.judge_layer('judge_evidence', 'evidence_for', entity)
                 detail['disclosures'] = server.judge_layer('judge_disclosures', 'for_judge', entity)
